@@ -1,0 +1,23 @@
+:root {
+  font-family: "Space Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0a1119;
+  color: #e8f0f8;
+}
+
+a {
+  color: inherit;
+}

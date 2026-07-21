@@ -1,0 +1,12 @@
+<p>Beer Tracker is a homebrewed (!) app to track different ales what I have drunk. 
+As it meets my personal needs, anyone can register and use it for FREE.</p>
+
+<p>It is difficult to build a database of all the ales in the world so this app 
+builds the data from an AI search. Once added to the database, it is retrieved 
+from there and so we build up a fast and comprehensive encyclopedia of beer.</p>
+
+<p>This App is currently in the initial stages of development so features will be 
+added as we progress.</p>
+
+<p>Any bugs or feature suggestions please send to 
+<a href="mailto:simon@rundell.org.uk">simon@rundell.org.uk</a></p>
