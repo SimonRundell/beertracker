@@ -3,6 +3,18 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
+/**
+ * Login endpoint.
+ *
+ * Endpoint: POST /api/login.php
+ * Body: {"email":string, "password":string}
+ * Response: {"token":string, "id":number, "name":string, "email":string, "status":string, "avatar_base64":string|null}
+ *
+ * Issues a new session token (see newSessionToken() in common.php) on success,
+ * which the client must send as `Authorization: Bearer <token>` on every
+ * subsequent authenticated request.
+ */
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respondJson(405, ['error' => 'Method not allowed']);
 }

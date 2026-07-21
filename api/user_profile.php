@@ -3,6 +3,15 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
+/**
+ * User profile endpoint. Requires Authorization: Bearer <token>.
+ *
+ * GET /api/user_profile.php  -> {"id","name","email","status","avatar_base64"} for the caller
+ * POST /api/user_profile.php -> update any of name, avatar_base64 (data URI or null to clear),
+ *                                or current_password+new_password; returns the fresh profile
+ */
+
+/** Sniff an image MIME type from its magic bytes (PNG/GIF/JPEG only). */
 function detectImageType(string $binary): ?string {
     if (str_starts_with($binary, "\x89PNG\r\n\x1a\n")) {
         return 'image/png';
@@ -17,6 +26,12 @@ function detectImageType(string $binary): ?string {
     return null;
 }
 
+/**
+ * Validate and re-encode an avatar data URI (or plain base64), enforcing a
+ * size limit and PNG/JPG/GIF allowlist. Responds 400 and exits on any
+ * validation failure. Returns null when $raw is null/empty (caller decides
+ * whether that means "clear the avatar" or "no change").
+ */
 function normalizeAvatar(?string $raw, int $maxBytes = 10485760): ?string {
     if ($raw === null) {
         // Caller decides whether null means clear or no change.
@@ -63,6 +78,7 @@ function normalizeAvatar(?string $raw, int $maxBytes = 10485760): ?string {
     return "data:{$finalMime};base64,{$clean}";
 }
 
+/** Fetch a user row by id, or respond 404 and exit if not found. */
 function fetchUser(mysqli $conn, int $userId): array {
     $stmt = $conn->prepare('SELECT id, name, email, status, avatar_base64, password_md5 FROM users WHERE id = ? LIMIT 1');
     $stmt->bind_param('i', $userId);

@@ -3,6 +3,16 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
+/**
+ * Registration endpoint.
+ *
+ * Endpoint: POST /api/register.php
+ * Body: {"name":string, "email":string, "password":string}
+ * Response: {"token":string, "id":number, "name":string, "email":string, "status":string, "avatar_base64":null}
+ *
+ * Creates a new user and immediately issues a session token, same contract as login.php.
+ */
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respondJson(405, ['error' => 'Method not allowed']);
 }
