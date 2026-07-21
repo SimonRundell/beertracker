@@ -38,7 +38,7 @@ function detectExtension(string $mime): ?string {
 }
 
 function photoStorageRoot(): string {
-    $base = env('FILE_LOCATION', __DIR__ . '/../uploads');
+    $base = (string)config('file_location', __DIR__ . '/../uploads');
     return rtrim($base, "\\/");
 }
 

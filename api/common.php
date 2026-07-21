@@ -8,65 +8,92 @@ if (!function_exists('str_starts_with')) {
     }
 }
 
-// Basic CORS for dev: reflect Origin when provided, otherwise allow all.
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
-header('Access-Control-Allow-Origin: ' . $origin);
-header('Vary: Origin');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Max-Age: 600');
-header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/cors.php';
 
-// Handle preflight quickly
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
+/** @var array<string,mixed>|null Decoded api/config.json, cached after first load. */
+$GLOBALS['__config'] = null;
 
-function loadEnv(string $path): void {
-    if (!file_exists($path)) return;
-    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (str_starts_with(trim($line), '#')) continue;
-        [$key, $value] = explode('=', $line, 2);
-        putenv(trim($key) . '=' . trim($value));
+/**
+ * Load and decode api/config.json once per request.
+ * @return array<string,mixed>
+ */
+function loadConfig(): array {
+    if ($GLOBALS['__config'] !== null) {
+        return $GLOBALS['__config'];
     }
+
+    $path = __DIR__ . '/config.json';
+    if (!file_exists($path)) {
+        respondJson(500, ['error' => 'Missing api/config.json. Copy api/config.example.json and fill in real values.']);
+    }
+
+    $decoded = json_decode((string)file_get_contents($path), true);
+    if (!is_array($decoded)) {
+        respondJson(500, ['error' => 'api/config.json is not valid JSON.']);
+    }
+
+    $GLOBALS['__config'] = $decoded;
+    return $decoded;
 }
 
-function env(string $key, ?string $default = null): ?string {
-    $v = getenv($key);
-    if ($v === false || $v === '') return $default;
-    return $v;
+/**
+ * Read a value from api/config.json using dot-path notation, e.g. config('db.host').
+ * @param string $path Dot-separated key path.
+ * @param mixed $default Value returned when the path is missing.
+ * @return mixed
+ */
+function config(string $path, mixed $default = null): mixed {
+    $node = loadConfig();
+    foreach (explode('.', $path) as $segment) {
+        if (!is_array($node) || !array_key_exists($segment, $node)) {
+            return $default;
+        }
+        $node = $node[$segment];
+    }
+    return $node === '' ? $default : $node;
 }
 
+/**
+ * Send a JSON response with the given HTTP status and terminate the request.
+ * @param int $status HTTP status code.
+ * @param array<string,mixed> $payload Response body, JSON-encoded.
+ */
 function respondJson(int $status, array $payload): void {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
+/**
+ * Open a MySQL connection using api/config.json credentials.
+ * @throws mysqli_sql_exception On connection failure (via MYSQLI_REPORT_ERROR).
+ */
 function db(): mysqli {
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-    $host = env('DB_HOST', 'mysql.codemonkey.design');
-    $name = env('DB_NAME', 'beertracker');
-    $user = env('DB_USER', 'beertrackercm');
-    $pass = env('DB_PASS', env('DB_PASSWORD', ''));
-    $port = (int)env('DB_PORT', '3306');
+    $host = (string)config('db.host', 'localhost');
+    $name = (string)config('db.name', 'beertracker');
+    $user = (string)config('db.user', '');
+    $pass = (string)config('db.pass', '');
+    $port = (int)config('db.port', 3306);
     $conn = new mysqli($host, $user, $pass, $name, $port);
     $conn->set_charset('utf8mb4');
     return $conn;
 }
 
+/**
+ * Decode the raw JSON request body into an associative array.
+ * @return array<string,mixed>
+ */
 function readJsonBody(): array {
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true);
     return is_array($data) ? $data : [];
 }
 
+/**
+ * Hash a password for storage. MD5 is used for compatibility with existing
+ * demo data only; replace with password_hash() before any real deployment.
+ */
 function hashPassword(string $password): string {
     return md5($password);
 }
-
-// Load env from project root, then api-local (api/.env) to allow overrides.
-loadEnv(__DIR__ . '/../.env');
-loadEnv(__DIR__ . '/.env');

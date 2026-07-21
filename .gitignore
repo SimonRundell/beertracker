@@ -1,9 +1,10 @@
-.env
-.env.*
-!/.env.example
-api/.env
-api/.env.*
-!/api/.env.example
+# Config (contains DB/API secrets)
+config.json
+api/config.json
+public/config.json
+
+# Production data dump
+data/beertracker.sql
 
 # Node / Vite output
 node_modules

@@ -1,0 +1,22 @@
+{
+  "db": {
+    "host": "localhost",
+    "port": 3306,
+    "name": "beertracker",
+    "user": "username",
+    "pass": "changeme"
+  },
+  "file_location": "../public/uploads",
+  "gemini": {
+    "provider": "devapi",
+    "api_key": "",
+    "model": "gemini-2.0-flash",
+    "gcp_project_id": "",
+    "gcp_region": "",
+    "gcp_access_token": ""
+  },
+  "tls": {
+    "curl_ca_bundle": "",
+    "ssl_cert_file": ""
+  }
+}
