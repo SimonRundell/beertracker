@@ -3,66 +3,20 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
-// Temporary diagnostic logging to isolate 502s.
-ini_set('log_errors', '1');
-ini_set('error_log', __DIR__ . '/../beer_error.log');
-error_log('beer.php start method=' . ($_SERVER['REQUEST_METHOD'] ?? 'cli'));
-
 /**
  * Single-file Beer Lookup API (Gemini) for PHP backend.
  *
- * Endpoint: POST /api/beer
+ * Endpoint: POST /api/beer.php
  * Body: {"prompt":"Beer Name" OR "Beer Name — Brewery"}
  * Response: {"brewery":..., "beer":..., "brewery details":..., "abv":..., "tastingnotes":...}
  *
- * ENV (Developer API):
- *   GEMINI_PROVIDER=devapi
- *   GEMINI_API_KEY=...
- *   GEMINI_MODEL=gemini-2.0-flash   (optional)
- *
- * ENV (Vertex):
- *   GEMINI_PROVIDER=vertex
- *   GCP_PROJECT_ID=...
- *   GCP_REGION=...                  (e.g. europe-west2)
- *   GCP_ACCESS_TOKEN=...            (bearer token; you’ll likely generate this dynamically in production)
- *   GEMINI_MODEL=gemini-2.0-flash   (optional)
+ * Config (api/config.json, see api/config.example.json):
+ *   gemini.provider = "devapi" | "vertex"
+ *   gemini.api_key, gemini.model                      (devapi)
+ *   gemini.gcp_project_id, gemini.gcp_region, gemini.gcp_access_token  (vertex)
  */
 
-header('Content-Type: application/json; charset=utf-8');
-
-// ----- Environment Setup ------------------------------------------------------------
-if (!function_exists('loadEnv')) {
-    function loadEnv(string $path): void {
-        if (!file_exists($path)) return;
-
-        $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            if (str_starts_with(trim($line), '#')) continue;
-            [$key, $value] = explode('=', $line, 2);
-            putenv(trim($key) . '=' . trim($value));
-        }
-    }
-}
-
-loadEnv(__DIR__ . '/../.env');
-
 // ---- Helpers ---------------------------------------------------------------
-
-if (!function_exists('respond')) {
-    function respond(int $status, array $payload): void {
-        http_response_code($status);
-        echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-}
-
-if (!function_exists('env')) {
-    function env(string $key, ?string $default = null): ?string {
-        $v = getenv($key);
-        if ($v === false || $v === '') return $default;
-        return $v;
-    }
-}
 
 if (!function_exists('normalizeName')) {
     function normalizeName(string $s): string {
@@ -114,7 +68,7 @@ function extractCandidateText(array $data): string {
  * Resolve a CA bundle path from env to avoid relying on a stale php.ini setting.
  */
 function resolveCaBundle(): ?string {
-    $candidates = [env('CURL_CA_BUNDLE'), env('SSL_CERT_FILE')];
+    $candidates = [config('tls.curl_ca_bundle'), config('tls.ssl_cert_file')];
     foreach ($candidates as $path) {
         if ($path && file_exists($path)) {
             return $path;
@@ -169,10 +123,10 @@ TXT;
 // ---- Gemini calls ----------------------------------------------------------
 
 function callGeminiDevApi(string $prompt): array {
-    $apiKey = env('GEMINI_API_KEY');
-    if (!$apiKey) throw new RuntimeException('Missing GEMINI_API_KEY');
+    $apiKey = config('gemini.api_key');
+    if (!$apiKey) throw new RuntimeException('Missing gemini.api_key in api/config.json');
 
-    $model  = env('GEMINI_MODEL', 'gemini-2.0-flash');
+    $model  = (string)config('gemini.model', 'gemini-2.0-flash');
     $schema = beerSchema();
 
     $payload = [
@@ -195,14 +149,14 @@ function callGeminiDevApi(string $prompt): array {
 }
 
 function callGeminiVertex(string $prompt): array {
-    $project = env('GCP_PROJECT_ID');
-    $region  = env('GCP_REGION');
-    $token   = env('GCP_ACCESS_TOKEN');
+    $project = config('gemini.gcp_project_id');
+    $region  = config('gemini.gcp_region');
+    $token   = config('gemini.gcp_access_token');
     if (!$project || !$region || !$token) {
-        throw new RuntimeException('Missing Vertex env vars: GCP_PROJECT_ID, GCP_REGION, GCP_ACCESS_TOKEN');
+        throw new RuntimeException('Missing Vertex config: gemini.gcp_project_id, gemini.gcp_region, gemini.gcp_access_token');
     }
 
-    $model  = env('GEMINI_MODEL', 'gemini-2.0-flash');
+    $model  = (string)config('gemini.model', 'gemini-2.0-flash');
     $schema = beerSchema();
 
     $payload = [
@@ -356,18 +310,15 @@ function saveBeerResult(array $r): void {
 // ---- Request handling ------------------------------------------------------
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    respond(405, ["error" => "Method not allowed"]);
+    respondJson(405, ["error" => "Method not allowed"]);
 }
 
 $rawBody = file_get_contents('php://input') ?: '';
 $body = json_decode($rawBody, true);
 $prompt = is_array($body) ? trim((string)($body['prompt'] ?? '')) : '';
 
-// Log parsed prompt length for diagnostics
-error_log('beer.php parsed prompt length=' . strlen($prompt));
-
 if ($prompt === '') {
-    respond(400, ["error" => "Missing prompt"]);
+    respondJson(400, ["error" => "Missing prompt"]);
 }
 
 [$guessBeer, $guessBrewery] = parsePromptGuess($prompt);
@@ -376,7 +327,7 @@ if ($prompt === '') {
 try {
     $cached = fetchCachedBeer($guessBeer, $guessBrewery);
     if ($cached) {
-        respond(200, [
+        respondJson(200, [
             'brewery' => $cached['brewery'],
             'beer' => $cached['beer'],
             'brewery details' => $cached['brewery_details'],
@@ -388,15 +339,12 @@ try {
     error_log('beer.php cache lookup failed: ' . $e->getMessage());
 }
 
-$provider = env('GEMINI_PROVIDER', 'devapi');
-error_log('beer.php provider=' . $provider);
+$provider = (string)config('gemini.provider', 'devapi');
 
 try {
-    error_log('beer.php calling provider');
     $result = ($provider === 'vertex')
         ? callGeminiVertex($prompt)
         : callGeminiDevApi($prompt);
-    error_log('beer.php provider call returned');
 
     validateBeerResult($result);
 
@@ -406,10 +354,10 @@ try {
         error_log('beer.php cache save failed: ' . $e->getMessage());
     }
 
-    respond(200, $result);
+    respondJson(200, $result);
 } catch (Throwable $e) {
     // Don’t leak secrets; provide actionable error
-    respond(502, [
+    respondJson(502, [
         "error" => "Unable to find that beer. Please check the name and brewery, or try again later.",
         "message" => $e->getMessage()
     ]);
