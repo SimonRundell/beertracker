@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidates"],
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["beer", "brewery", "country"],
+        "properties": {
+          "beer": { "type": "string" },
+          "brewery": { "type": "string" },
+          "country": {
+            "type": "string",
+            "description": "Country the brewery is based in, e.g. United Kingdom, United States"
+          }
+        }
+      }
+    }
+  }
+}

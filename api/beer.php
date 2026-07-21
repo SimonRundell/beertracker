@@ -7,8 +7,15 @@ require __DIR__ . '/common.php';
  * Single-file Beer Lookup API (Gemini) for PHP backend.
  *
  * Endpoint: POST /api/beer.php
- * Body: {"prompt":"Beer Name" OR "Beer Name — Brewery"}
- * Response: {"brewery":..., "beer":..., "brewery details":..., "abv":..., "tastingnotes":...}
+ *
+ * Details mode (default) — full lookup for one specific beer:
+ *   Body: {"prompt":"Beer Name" OR "Beer Name — Brewery"}
+ *   Response: {"brewery":..., "beer":..., "brewery details":..., "abv":..., "tastingnotes":...}
+ *
+ * Candidates mode — list possible matches for a bare beer name (no brewery),
+ * prioritising UK breweries when ambiguous, for a "Did you mean...?" picker:
+ *   Body: {"prompt":"Beer Name", "mode":"candidates"}
+ *   Response: {"candidates":[{"beer":..., "brewery":..., "country":...}, ...]}
  *
  * Config (api/config.json, see api/config.example.json):
  *   gemini.provider = "devapi" | "vertex"
@@ -99,15 +106,20 @@ function resolveCaBundle(): ?string {
     return null;
 }
 
-// ---- Core: schema + instructions ------------------------------------------
+// ---- Core: schemas + instructions ------------------------------------------
 
 function beerSchema(): array {
     return json_decode((string)file_get_contents(__DIR__ . '/beer_schema.json'), true);
 }
 
+function candidateSchema(): array {
+    return json_decode((string)file_get_contents(__DIR__ . '/beer_candidates_schema.json'), true);
+}
+
 function instructionText(): string {
     return <<<TXT
-Input may be just a beer name OR "beer — brewery". Use the brewery if provided to disambiguate.
+Input is a specific "beer — brewery" pair (or occasionally just a beer name that
+already uniquely identifies one beer). Look up that exact beer.
 
 Return ONLY valid JSON that matches the provided schema. No markdown, no commentary, no extra keys.
 
@@ -121,21 +133,46 @@ Rules:
 TXT;
 }
 
+function candidateInstructionText(): string {
+    return <<<TXT
+Input is a beer name with no brewery specified. List up to 5 distinct real
+beer+brewery matches for that name, ranked most-likely first.
+
+Rules:
+- When the name is ambiguous across countries, prioritise UK-based breweries
+  over others; among UK matches prefer the most widely known/popular beer.
+- Only include real, known beers — do not invent matches.
+- If you are confident there is only one real match, return a single-item list.
+- Return ONLY valid JSON matching the provided schema. No markdown, no commentary.
+TXT;
+}
+
 // ---- Gemini calls ----------------------------------------------------------
 
-function callGeminiDevApi(string $prompt): array {
+/**
+ * Send $fullText to Gemini (devapi or vertex, per config('gemini.provider'))
+ * constrained to $schema, and return the decoded JSON result.
+ * @throws RuntimeException
+ */
+function callGemini(string $fullText, array $schema): array {
+    $provider = (string)config('gemini.provider', 'devapi');
+    return $provider === 'vertex'
+        ? callGeminiVertex($fullText, $schema)
+        : callGeminiDevApi($fullText, $schema);
+}
+
+function callGeminiDevApi(string $fullText, array $schema): array {
     $apiKey = config('gemini.api_key');
     if (!$apiKey) throw new RuntimeException('Missing gemini.api_key in api/config.json');
 
-    $model  = (string)config('gemini.model', 'gemini-flash-latest');
-    $schema = beerSchema();
+    $model = (string)config('gemini.model', 'gemini-flash-latest');
 
     $payload = [
         "contents" => [
             [
                 "role" => "user",
                 "parts" => [
-                    ["text" => instructionText() . "\n\nINPUT: " . $prompt]
+                    ["text" => $fullText]
                 ]
             ]
         ],
@@ -149,7 +186,7 @@ function callGeminiDevApi(string $prompt): array {
     return executeStreamJson($url, $payload, null);
 }
 
-function callGeminiVertex(string $prompt): array {
+function callGeminiVertex(string $fullText, array $schema): array {
     $project = config('gemini.gcp_project_id');
     $region  = config('gemini.gcp_region');
     $token   = config('gemini.gcp_access_token');
@@ -157,15 +194,14 @@ function callGeminiVertex(string $prompt): array {
         throw new RuntimeException('Missing Vertex config: gemini.gcp_project_id, gemini.gcp_region, gemini.gcp_access_token');
     }
 
-    $model  = (string)config('gemini.model', 'gemini-flash-latest');
-    $schema = beerSchema();
+    $model = (string)config('gemini.model', 'gemini-flash-latest');
 
     $payload = [
         "contents" => [
             [
                 "role" => "user",
                 "parts" => [
-                    ["text" => instructionText() . "\n\nINPUT: " . $prompt]
+                    ["text" => $fullText]
                 ]
             ]
         ],
@@ -274,6 +310,30 @@ function validateAndCleanBeerResult(array $r): array {
     ];
 }
 
+/**
+ * Validate and clean a candidates-mode model response into a plain list of
+ * {beer, brewery, country}, dropping any malformed entries rather than
+ * failing the whole request.
+ * @param array<string,mixed> $r
+ * @return array<int,array{beer:string,brewery:string,country:string}>
+ */
+function validateAndCleanCandidates(array $r): array {
+    $items = $r['candidates'] ?? null;
+    if (!is_array($items)) throw new RuntimeException('Missing candidates array in model output');
+
+    $clean = [];
+    foreach ($items as $item) {
+        if (!is_array($item)) continue;
+        $beer = is_string($item['beer'] ?? null) ? trim($item['beer']) : '';
+        $brewery = is_string($item['brewery'] ?? null) ? trim($item['brewery']) : '';
+        $country = is_string($item['country'] ?? null) ? trim($item['country']) : '';
+        if ($beer === '' || $brewery === '') continue;
+        $clean[] = ['beer' => $beer, 'brewery' => $brewery, 'country' => $country ?: 'Unknown'];
+        if (count($clean) >= 5) break;
+    }
+    return $clean;
+}
+
 // ---- Caching ---------------------------------------------------------------
 
 function fetchCachedBeer(?string $beer, ?string $brewery): ?array {
@@ -323,11 +383,30 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $rawBody = file_get_contents('php://input') ?: '';
 $body = json_decode($rawBody, true);
 $prompt = is_array($body) ? trim((string)($body['prompt'] ?? '')) : '';
+$mode = is_array($body) ? (string)($body['mode'] ?? 'details') : 'details';
 
 if ($prompt === '') {
     respondJson(400, ["error" => "Missing prompt"]);
 }
 
+// ---- Candidates mode: list possible beer+brewery matches for a bare beer name ----
+if ($mode === 'candidates') {
+    try {
+        $raw = callGemini(candidateInstructionText() . "\n\nINPUT: " . $prompt, candidateSchema());
+        $candidates = validateAndCleanCandidates($raw);
+        respondJson(200, ['candidates' => $candidates]);
+    } catch (Throwable $e) {
+        $requestId = bin2hex(random_bytes(4));
+        logDiagnostic("beer.php candidates lookup failed [{$requestId}]: " . $e->getMessage());
+        respondJson(502, [
+            "error" => "Unable to search for that beer. Please try again later.",
+            "request_id" => $requestId,
+        ]);
+    }
+    exit;
+}
+
+// ---- Details mode: full lookup for a specific "beer — brewery" -------------
 [$guessBeer, $guessBrewery] = parsePromptGuess($prompt);
 
 // Try cache first
@@ -346,13 +425,8 @@ try {
     logDiagnostic('beer.php cache lookup failed: ' . $e->getMessage());
 }
 
-$provider = (string)config('gemini.provider', 'devapi');
-
 try {
-    $raw = ($provider === 'vertex')
-        ? callGeminiVertex($prompt)
-        : callGeminiDevApi($prompt);
-
+    $raw = callGemini(instructionText() . "\n\nINPUT: " . $prompt, beerSchema());
     $result = validateAndCleanBeerResult($raw);
 
     try {

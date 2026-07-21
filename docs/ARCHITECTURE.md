@@ -20,7 +20,10 @@
 - Common bootstrap: `api/common.php` — loads `api/config.json`, exposes `config()` (dot-path lookup), `db()`, `respondJson()`, `readJsonBody()`, `hashPassword()`, and `requireAuth()`. Requires `cors.php` first.
 - CORS: `api/cors.php` — shared by every endpoint via `common.php`; reflects `http(s)://localhost:<any port>` origins, handles `OPTIONS` preflight.
 - Auth: `login.php`, `register.php` issue an opaque session token (`newSessionToken()` in `common.php`), stored on the `users` row with a 30-day expiry. `requireAuth()` verifies `Authorization: Bearer <token>` on every other endpoint and returns the authenticated user row.
-- Beer search: `beer.php` (consumes the AI schema in `beer_schema.json`, no auth required). Response parsing explicitly handles empty/safety-blocked/truncated Gemini responses; `tastingnotes` HTML is sanitized (tags stripped, not rejected) rather than causing a hard failure.
+- Beer search: `beer.php` (no auth required), two modes:
+  - Details (default) — full lookup for one specific beer, schema in `beer_schema.json`.
+  - Candidates (`mode:"candidates"`) — lists up to 5 possible beer+brewery matches for a bare beer name, prioritizing UK breweries when ambiguous, schema in `beer_candidates_schema.json`; drives the "Did you mean...?" picker in `BeerSearch` when the Brewery field is left blank.
+  Response parsing explicitly handles empty/safety-blocked/truncated Gemini responses; `tastingnotes` HTML is sanitized (tags stripped, not rejected) rather than causing a hard failure.
 - User log: `user_beers.php` (GET list/single, POST upsert), stores tasting data + `photos_json`.
 - Photos: `upload_user_beer_photo.php` (stores files under `file_location/<user_id>/`), `delete_user_beer_photo.php` (removes file + updates JSON).
 - Profile: `user_profile.php` (fetch/update name, avatar, password).

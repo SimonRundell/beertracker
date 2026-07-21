@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import Lightbox from './Lightbox'
-import { getUserBeerEntry, saveUserBeer, uploadUserBeerPhoto } from '../api/endpoints.js'
+import { getUserBeerEntry, saveUserBeer, uploadUserBeerPhoto, searchBeerCandidates } from '../api/endpoints.js'
 
 const TASTING_NOTES_SANITIZE_CONFIG = {
   ALLOWED_TAGS: ['h3', 'p', 'ul', 'li', 'strong', 'em', 'br'],
@@ -34,6 +34,9 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
   const [uploadError, setUploadError] = useState('')
   const [uploadStatus, setUploadStatus] = useState('')
   const [lightbox, setLightbox] = useState(null)
+  const [candidates, setCandidates] = useState(null)
+  const [candidateBusy, setCandidateBusy] = useState(false)
+  const [candidateError, setCandidateError] = useState('')
   const dateInputRef = useRef(null)
   const canClear = beer || brewery
   const uploadsBase = useMemo(() => `${window.location.origin}/uploads`, [])
@@ -62,10 +65,43 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    const query = brewery ? `${beer} - ${brewery}` : beer
-    onSearch(query)
+    setCandidates(null)
+    setCandidateError('')
+
+    // Brewery given explicitly: no ambiguity to resolve, search directly.
+    if (brewery) {
+      onSearch(`${beer} - ${brewery}`)
+      return
+    }
+
+    setCandidateBusy(true)
+    try {
+      const data = await searchBeerCandidates(beer)
+      const matches = Array.isArray(data.candidates) ? data.candidates : []
+      if (matches.length === 0) {
+        onSearch(beer)
+      } else if (matches.length === 1) {
+        onSearch(`${matches[0].beer} - ${matches[0].brewery}`)
+      } else {
+        setCandidates(matches)
+      }
+    } catch (err) {
+      setCandidateError(err.message)
+    } finally {
+      setCandidateBusy(false)
+    }
+  }
+
+  const chooseCandidate = (candidate) => {
+    setCandidates(null)
+    onSearch(`${candidate.beer} - ${candidate.brewery}`)
+  }
+
+  const searchByNameOnly = () => {
+    setCandidates(null)
+    onSearch(beer)
   }
 
   useEffect(() => {
@@ -81,6 +117,8 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
     setUploadStatus('')
     setUploading(false)
     setLightbox(null)
+    setCandidates(null)
+    setCandidateError('')
 
     if (!result || !user) return
 
@@ -161,6 +199,8 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
           onClick={() => {
             setBeer('')
             setBrewery('')
+            setCandidates(null)
+            setCandidateError('')
           }}
           aria-label="Clear search"
           disabled={!canClear || busy}
@@ -180,10 +220,32 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
           <span>Brewery (optional)</span>
           <input value={brewery} onChange={(e) => setBrewery(e.target.value)} />
         </label>
-        <button className="primary" type="submit" disabled={busy}>
-          {busy ? 'Searching...' : 'Search'}
+        <button className="primary" type="submit" disabled={busy || candidateBusy}>
+          {busy || candidateBusy ? 'Searching...' : 'Search'}
         </button>
       </form>
+      {candidateError && <div className="error">{candidateError}</div>}
+      {candidates && candidates.length > 0 && (
+        <div className="candidates">
+          <div className="label">Did you mean...?</div>
+          <div className="candidates__list">
+            {candidates.map((c, idx) => (
+              <button
+                key={`${c.beer}-${c.brewery}-${idx}`}
+                type="button"
+                className="candidate-row"
+                onClick={() => chooseCandidate(c)}
+              >
+                <span className="value">{c.beer}</span>
+                <span className="label">{c.brewery}{c.country ? ` · ${c.country}` : ''}</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="ghost" onClick={searchByNameOnly}>
+            None of these — search by name only
+          </button>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       {result && (
         <div className="result">
