@@ -1,0 +1,8 @@
+# Some Apache + CGI/FastCGI configurations strip the Authorization header
+# before it reaches PHP. This forwards it explicitly so requireAuth() in
+# common.php always sees it. No effect under mod_php or nginx.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
