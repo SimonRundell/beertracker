@@ -24,6 +24,17 @@ export function searchBeer(prompt) {
   return apiClient.post('/beer.php', { prompt }).then((res) => res.data)
 }
 
+/**
+ * List candidate beer+brewery matches for a bare beer name (no brewery),
+ * prioritized toward UK breweries when ambiguous — used to drive a
+ * "Did you mean...?" picker before committing to a full lookup.
+ * @param {string} beerName
+ * @returns {Promise<{candidates: Array<{beer:string,brewery:string,country:string}>}>}
+ */
+export function searchBeerCandidates(beerName) {
+  return apiClient.post('/beer.php', { prompt: beerName, mode: 'candidates' }).then((res) => res.data)
+}
+
 /** List every beer the current user has logged. */
 export function listUserBeers() {
   return apiClient.get('/user_beers.php').then((res) => res.data)

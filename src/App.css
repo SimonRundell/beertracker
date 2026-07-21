@@ -390,6 +390,38 @@ h1 {
   margin: 0;
 }
 
+.candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.candidates__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.candidate-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+  justify-content: center;
+}
+
+.candidate-row:hover {
+  background: rgba(142, 197, 255, 0.1);
+  border-color: rgba(142, 197, 255, 0.3);
+}
+
 .result {
   display: flex;
   flex-direction: column;

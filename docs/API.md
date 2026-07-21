@@ -12,6 +12,11 @@ login/register to be sent as `Authorization: Bearer <token>` on every request. T
 
 ## Beer Search
 - `POST /beer.php` — body `{ prompt }` → AI beer details (see `beer_schema.json`). No auth required.
+  `prompt` is a beer name, or `"beer — brewery"` if the brewery is known.
+- `POST /beer.php` — body `{ prompt, mode: "candidates" }` → `{ candidates: [{ beer, brewery, country }] }`
+  (see `beer_candidates_schema.json`). Lists up to 5 possible beer+brewery matches for a bare beer
+  name, prioritizing UK breweries when ambiguous — used to drive a "Did you mean...?" picker before
+  calling the default mode with a specific `"beer — brewery"` prompt. No auth required.
 
 ## User Profile
 - `GET /user_profile.php` → `{ id, name, email, status, avatar_base64 }` for the authenticated user
