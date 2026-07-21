@@ -8,39 +8,8 @@ import MyBeers from './components/MyBeers'
 import UserProfile from './components/UserProfile'
 import MOTD from './components/MOTD'
 import Avatar from './components/Avatar'
-import { getConfig } from './api/config.js'
-
-// API base comes from public/config.json (see public/config.example.json).
-const API_BASE = getConfig().apiBase
-/**
- * POST a JSON payload to the API base and return parsed JSON or throw on error.
- * @param {string} path Relative API path (e.g., "/login.php").
- * @param {Record<string, unknown>} payload Body to send as JSON.
- * @returns {Promise<any>} Parsed JSON response.
- */
-async function postJson(path, payload) {
-  // console.log(payload)
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-
-  const text = await res.text()
-  let data = null
-  try {
-    data = text ? JSON.parse(text) : {}
-  } catch (err) {
-    throw new Error(`Invalid JSON response: ${text.slice(0, 200)}`)
-  }
-
-  if (!res.ok) {
-    const message = data?.error || data?.message || res.statusText
-    throw new Error(message)
-  }
-
-  return data
-}
+import { login, register, searchBeer } from './api/endpoints.js'
+import { setAuthToken } from './api/client.js'
 
 /**
  * Root application component that orchestrates auth, beer search, and user beer log layout.
@@ -60,7 +29,8 @@ function App() {
     setAuthBusy(true)
     setAuthError('')
     try {
-      const data = await postJson('/login.php', { email, password })
+      const data = await login(email, password)
+      setAuthToken(data.token)
       setUser({
         id: data.id,
         name: data.name || email,
@@ -79,7 +49,8 @@ function App() {
     setAuthBusy(true)
     setAuthError('')
     try {
-      const data = await postJson('/register.php', { name, email, password })
+      const data = await register(name, email, password)
+      setAuthToken(data.token)
       setUser({
         id: data.id,
         name: data.name || name,
@@ -99,7 +70,7 @@ function App() {
     setBeerResult(null)
     setSearchBusy(true)
     try {
-      const data = await postJson('/beer.php', { prompt })
+      const data = await searchBeer(prompt)
       setBeerResult(data)
     } catch (err) {
       setBeerError(err.message)
@@ -109,6 +80,7 @@ function App() {
   }
 
   const handleLogout = () => {
+    setAuthToken(null)
     setUser(null)
     setBeerResult(null)
   }
@@ -182,19 +154,18 @@ function App() {
         ) : (
           <>
             <div className="column column--left">
-              <UserProfile user={user} apiBase={API_BASE} onUserUpdated={handleUserUpdated} />
+              <UserProfile user={user} onUserUpdated={handleUserUpdated} />
               <BeerSearch
                 onSearch={handleSearch}
                 result={beerResult}
                 busy={searchBusy}
                 error={beerError}
                 user={user}
-                apiBase={API_BASE}
                 onSaved={handleLogSaved}
               />
             </div>
             <div className="column column--right">
-              <MyBeers user={user} apiBase={API_BASE} refreshKey={beersVersion} />
+              <MyBeers user={user} refreshKey={beersVersion} />
             </div>
           </>
         )}

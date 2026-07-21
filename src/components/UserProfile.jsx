@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import Avatar from './Avatar'
+import { getUserProfile, updateUserProfile } from '../api/endpoints.js'
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif']
@@ -8,10 +9,9 @@ const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif']
  * User profile panel (collapsible) for updating name, avatar, and password.
  * @param {Object} props
  * @param {{id:number,name?:string,email?:string,avatar_base64?:string}} props.user Authenticated user.
- * @param {string} props.apiBase Base API URL.
  * @param {(u: any) => void} [props.onUserUpdated] Callback with fresh user data after save/fetch.
  */
-export default function UserProfile({ user, apiBase, onUserUpdated }) {
+export default function UserProfile({ user, onUserUpdated }) {
   const [name, setName] = useState(user?.name || '')
   const [email, setEmail] = useState(user?.email || '')
   const [avatar, setAvatar] = useState(user?.avatar_base64 || '')
@@ -33,11 +33,7 @@ export default function UserProfile({ user, apiBase, onUserUpdated }) {
     const fetchProfile = async () => {
       setError('')
       try {
-        const res = await fetch(`${apiBase}/user_profile.php`, {
-          headers: { Authorization: `Bearer ${user.token}` },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'Failed to load profile')
+        const data = await getUserProfile()
         if (avatarDirtyRef.current) {
           return
         }
@@ -53,7 +49,7 @@ export default function UserProfile({ user, apiBase, onUserUpdated }) {
     fetchProfile()
     // We intentionally skip onUserUpdated to avoid refetch loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, apiBase])
+  }, [user])
 
   const handleFile = (e) => {
     const file = e.target.files?.[0]
@@ -123,13 +119,7 @@ export default function UserProfile({ user, apiBase, onUserUpdated }) {
 
     setLoading(true)
     try {
-      const res = await fetch(`${apiBase}/user_profile.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
-        body: JSON.stringify(payload),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to update profile')
+      const data = await updateUserProfile(payload)
       setStatus('Saved')
       setAvatar(data.avatar_base64 || '')
       setAvatarDirty(false)

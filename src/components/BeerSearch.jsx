@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Lightbox from './Lightbox'
+import { getUserBeerEntry, saveUserBeer, uploadUserBeerPhoto } from '../api/endpoints.js'
 
 /**
  * Beer search panel plus personal log editor for the selected beer.
@@ -10,10 +11,9 @@ import Lightbox from './Lightbox'
  * @param {boolean} props.busy Search in-flight flag.
  * @param {string} props.error Search error message (if any).
  * @param {{id:number,name?:string,email?:string}} props.user Authenticated user.
- * @param {string} props.apiBase Base URL for API (e.g., http://localhost/api).
  * @param {() => void} [props.onSaved] Optional callback after log save/upload.
  */
-export default function BeerSearch({ onSearch, result, busy, error, user, apiBase, onSaved }) {
+export default function BeerSearch({ onSearch, result, busy, error, user, onSaved }) {
   const [beer, setBeer] = useState('')
   const [brewery, setBrewery] = useState('')
   const [drank, setDrank] = useState(false)
@@ -81,15 +81,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
     const fetchLog = async () => {
       setLogLoading(true)
       try {
-        const params = new URLSearchParams({
-          beer: result.beer,
-          brewery: result.brewery,
-        })
-        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${user.token}` },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'Failed to load personal notes')
+        const data = await getUserBeerEntry(result.beer, result.brewery)
         if (data.exists) {
           setDrank(Boolean(data.drank))
           setUserNotes(data.user_notes || '')
@@ -105,7 +97,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
     }
 
     fetchLog()
-  }, [result, user, apiBase])
+  }, [result, user])
 
   const handleSave = async () => {
     if (!result || !user) return
@@ -113,20 +105,14 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
     setSaveStatus('')
     setLogLoading(true)
     try {
-      const res = await fetch(`${apiBase}/user_beers.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
-        body: JSON.stringify({
-          beer: result.beer,
-          brewery: result.brewery,
-          drank,
-          user_notes: userNotes,
-          tasting_location: tastingLocation,
-          date_tasted: dateTasted || null,
-        }),
+      await saveUserBeer({
+        beer: result.beer,
+        brewery: result.brewery,
+        drank,
+        user_notes: userNotes,
+        tasting_location: tastingLocation,
+        date_tasted: dateTasted || null,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to save personal notes')
       setSaveStatus('Saved')
       if (onSaved) onSaved()
     } catch (err) {
@@ -146,18 +132,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
     try {
       let latestPhotos = photos
       for (const file of files) {
-        const form = new FormData()
-        form.append('beer', result.beer)
-        form.append('brewery', result.brewery)
-        form.append('photo', file)
-
-        const res = await fetch(`${apiBase}/upload_user_beer_photo.php`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${user.token}` },
-          body: form,
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'Failed to upload photo')
+        const data = await uploadUserBeerPhoto({ beer: result.beer, brewery: result.brewery, file })
         latestPhotos = Array.isArray(data.photos) ? data.photos : latestPhotos
         setPhotos(latestPhotos)
       }

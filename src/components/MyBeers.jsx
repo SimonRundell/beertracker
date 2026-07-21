@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import Lightbox from './Lightbox'
+import {
+  listUserBeers,
+  getUserBeerEntry,
+  saveUserBeer,
+  uploadUserBeerPhoto,
+  deleteUserBeerPhoto,
+} from '../api/endpoints.js'
 
 /**
  * Displays the user's saved beers with quick metadata, and an editable modal per entry.
  * Manages photo upload/delete, tasting details, and lightbox display.
  * @param {Object} props
  * @param {{id:number,name?:string,email?:string}} props.user Authenticated user.
- * @param {string} props.apiBase Base URL for API (e.g., http://localhost/api).
  * @param {number} props.refreshKey Changes trigger list reload (incremented after saves elsewhere).
  */
-export default function MyBeers({ user, apiBase, refreshKey }) {
+export default function MyBeers({ user, refreshKey }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -71,11 +77,7 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       setLoading(true)
       setError('')
       try {
-        const res = await fetch(`${apiBase}/user_beers.php`, {
-          headers: { Authorization: `Bearer ${user.token}` },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'Failed to load beers')
+        const data = await listUserBeers()
         setItems(data.items || [])
       } catch (err) {
         setError(err.message)
@@ -84,7 +86,7 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       }
     }
     fetchList()
-  }, [user, apiBase, refreshKey])
+  }, [user, refreshKey])
 
   useEffect(() => {
     if (!modalOpen || !selected || !user) return
@@ -92,15 +94,7 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       setModalLoading(true)
       setModalError('')
       try {
-        const params = new URLSearchParams({
-          beer: selected.beer,
-          brewery: selected.brewery,
-        })
-        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${user.token}` },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'Failed to load entry')
+        const data = await getUserBeerEntry(selected.beer, selected.brewery)
         if (data.exists) {
           setModalDrank(Boolean(data.drank))
           setModalNotes(data.user_notes || '')
@@ -115,7 +109,7 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       }
     }
     fetchDetail()
-  }, [modalOpen, selected, user, apiBase])
+  }, [modalOpen, selected, user])
 
   const closeModal = () => {
     setModalOpen(false)
@@ -136,20 +130,14 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
     setModalError('')
     setModalLoading(true)
     try {
-      const res = await fetch(`${apiBase}/user_beers.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
-        body: JSON.stringify({
-          beer: selected.beer,
-          brewery: selected.brewery,
-          drank: modalDrank,
-          user_notes: modalNotes,
-          tasting_location: modalLocation,
-          date_tasted: modalDate || null,
-        }),
+      await saveUserBeer({
+        beer: selected.beer,
+        brewery: selected.brewery,
+        drank: modalDrank,
+        user_notes: modalNotes,
+        tasting_location: modalLocation,
+        date_tasted: modalDate || null,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to save')
       // Update list snapshot
       setItems((prev) =>
         prev.map((it) =>
@@ -179,18 +167,7 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
     try {
       let latest = modalPhotos
       for (const file of files) {
-        const form = new FormData()
-        form.append('beer', selected.beer)
-        form.append('brewery', selected.brewery)
-        form.append('photo', file)
-
-        const res = await fetch(`${apiBase}/upload_user_beer_photo.php`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${user.token}` },
-          body: form,
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'Failed to upload photo')
+        const data = await uploadUserBeerPhoto({ beer: selected.beer, brewery: selected.brewery, file })
         latest = Array.isArray(data.photos) ? data.photos : latest
         setModalPhotos(latest)
       }
@@ -212,18 +189,7 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
     setModalUploadError('')
     setModalUploading(true)
     try {
-      const form = new FormData()
-      form.append('beer', selected.beer)
-      form.append('brewery', selected.brewery)
-      form.append('filename', name)
-
-      const res = await fetch(`${apiBase}/delete_user_beer_photo.php`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${user.token}` },
-        body: form,
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to delete photo')
+      const data = await deleteUserBeerPhoto({ beer: selected.beer, brewery: selected.brewery, filename: name })
       const updated = Array.isArray(data.photos) ? data.photos : []
       setModalPhotos(updated)
       setItems((prev) =>
