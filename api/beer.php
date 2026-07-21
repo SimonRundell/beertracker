@@ -127,7 +127,7 @@ function callGeminiDevApi(string $prompt): array {
     $apiKey = config('gemini.api_key');
     if (!$apiKey) throw new RuntimeException('Missing gemini.api_key in api/config.json');
 
-    $model  = (string)config('gemini.model', 'gemini-2.5-flash');
+    $model  = (string)config('gemini.model', 'gemini-flash-latest');
     $schema = beerSchema();
 
     $payload = [
@@ -157,7 +157,7 @@ function callGeminiVertex(string $prompt): array {
         throw new RuntimeException('Missing Vertex config: gemini.gcp_project_id, gemini.gcp_region, gemini.gcp_access_token');
     }
 
-    $model  = (string)config('gemini.model', 'gemini-2.5-flash');
+    $model  = (string)config('gemini.model', 'gemini-flash-latest');
     $schema = beerSchema();
 
     $payload = [
