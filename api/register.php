@@ -31,13 +31,16 @@ try {
 
     $hash = hashPassword($password);
     $status = 'user';
-    $stmt = $conn->prepare('INSERT INTO users (name, email, password_md5, status, avatar_base64) VALUES (?, ?, ?, ?, NULL)');
-    $stmt->bind_param('ssss', $name, $email, $hash, $status);
+    [$token, $expires] = newSessionToken();
+    $stmt = $conn->prepare(
+        'INSERT INTO users (name, email, password_md5, status, avatar_base64, token, token_expires_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?)'
+    );
+    $stmt->bind_param('ssssss', $name, $email, $hash, $status, $token, $expires);
     $stmt->execute();
     $userId = $stmt->insert_id;
     $stmt->close();
 
-    $token = bin2hex(random_bytes(16));
     respondJson(201, [
         'token' => $token,
         'id' => $userId,

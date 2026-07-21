@@ -3,14 +3,6 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
-// Basic validation helpers
-function assertInt($value, string $field): int {
-    if (!is_numeric($value)) {
-        respondJson(400, ['error' => "{$field} must be numeric"]);
-    }
-    return (int)$value;
-}
-
 function parseDate(?string $value, string $field = 'date'): ?string {
     if ($value === null) {
         return null;
@@ -39,15 +31,13 @@ function decodePhotos(?string $json): array {
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$authUser = requireAuth();
+$userId = (int)$authUser['id'];
 
 try {
     if ($method === 'GET') {
-        $userId = isset($_GET['user_id']) ? assertInt($_GET['user_id'], 'user_id') : null;
         $beer   = isset($_GET['beer']) ? normalizeName((string)$_GET['beer']) : null;
         $brewery= isset($_GET['brewery']) ? normalizeName((string)$_GET['brewery']) : null;
-        if (!$userId) {
-            respondJson(400, ['error' => 'user_id is required']);
-        }
 
         $conn = db();
 
@@ -102,7 +92,6 @@ try {
 
     if ($method === 'POST') {
         $body = readJsonBody();
-        $userId = assertInt($body['user_id'] ?? null, 'user_id');
         $beer = normalizeName((string)($body['beer'] ?? ''));
         $brewery = normalizeName((string)($body['brewery'] ?? ''));
         $drank = !empty($body['drank']) ? 1 : 0;

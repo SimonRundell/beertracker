@@ -71,8 +71,9 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       setLoading(true)
       setError('')
       try {
-        const params = new URLSearchParams({ user_id: user.id })
-        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`)
+        const res = await fetch(`${apiBase}/user_beers.php`, {
+          headers: { Authorization: `Bearer ${user.token}` },
+        })
         const data = await res.json()
         if (!res.ok) throw new Error(data?.error || 'Failed to load beers')
         setItems(data.items || [])
@@ -92,11 +93,12 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       setModalError('')
       try {
         const params = new URLSearchParams({
-          user_id: user.id,
           beer: selected.beer,
           brewery: selected.brewery,
         })
-        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`)
+        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${user.token}` },
+        })
         const data = await res.json()
         if (!res.ok) throw new Error(data?.error || 'Failed to load entry')
         if (data.exists) {
@@ -136,9 +138,8 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
     try {
       const res = await fetch(`${apiBase}/user_beers.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
         body: JSON.stringify({
-          user_id: user.id,
           beer: selected.beer,
           brewery: selected.brewery,
           drank: modalDrank,
@@ -179,13 +180,13 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
       let latest = modalPhotos
       for (const file of files) {
         const form = new FormData()
-        form.append('user_id', user.id)
         form.append('beer', selected.beer)
         form.append('brewery', selected.brewery)
         form.append('photo', file)
 
         const res = await fetch(`${apiBase}/upload_user_beer_photo.php`, {
           method: 'POST',
+          headers: { Authorization: `Bearer ${user.token}` },
           body: form,
         })
         const data = await res.json()
@@ -212,13 +213,13 @@ export default function MyBeers({ user, apiBase, refreshKey }) {
     setModalUploading(true)
     try {
       const form = new FormData()
-      form.append('user_id', user.id)
       form.append('beer', selected.beer)
       form.append('brewery', selected.brewery)
       form.append('filename', name)
 
       const res = await fetch(`${apiBase}/delete_user_beer_photo.php`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${user.token}` },
         body: form,
       })
       const data = await res.json()
