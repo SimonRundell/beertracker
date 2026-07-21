@@ -75,6 +75,18 @@ function extractCandidateText(array $data): string {
 }
 
 /**
+ * Log a diagnostic line via error_log() AND append it to api/debug.log.
+ * The dual write exists because PHP's error_log destination varies by local
+ * server setup (Apache module vs php-cgi vs built-in server) and is easy to
+ * lose track of; api/debug.log is always in a known, fixed location.
+ */
+function logDiagnostic(string $message): void {
+    error_log($message);
+    $line = '[' . gmdate('Y-m-d H:i:s') . 'Z] ' . $message . PHP_EOL;
+    @file_put_contents(__DIR__ . '/debug.log', $line, FILE_APPEND | LOCK_EX);
+}
+
+/**
  * Resolve a CA bundle path from config to avoid relying on a stale php.ini setting.
  */
 function resolveCaBundle(): ?string {
@@ -115,7 +127,7 @@ function callGeminiDevApi(string $prompt): array {
     $apiKey = config('gemini.api_key');
     if (!$apiKey) throw new RuntimeException('Missing gemini.api_key in api/config.json');
 
-    $model  = (string)config('gemini.model', 'gemini-2.0-flash');
+    $model  = (string)config('gemini.model', 'gemini-2.5-flash');
     $schema = beerSchema();
 
     $payload = [
@@ -145,7 +157,7 @@ function callGeminiVertex(string $prompt): array {
         throw new RuntimeException('Missing Vertex config: gemini.gcp_project_id, gemini.gcp_region, gemini.gcp_access_token');
     }
 
-    $model  = (string)config('gemini.model', 'gemini-2.0-flash');
+    $model  = (string)config('gemini.model', 'gemini-2.5-flash');
     $schema = beerSchema();
 
     $payload = [
@@ -199,7 +211,7 @@ function executeStreamJson(string $url, array $payload, ?string $bearerToken): a
     if (isset($http_response_header[0]) && preg_match('#HTTP/\S+\s(\d{3})#', $http_response_header[0], $m)) {
         $status = (int)$m[1];
     }
-    error_log("beer.php gemini call status={$status}");
+    logDiagnostic("beer.php gemini call status={$status}");
 
     if ($raw === false) {
         $err = error_get_last();
@@ -331,7 +343,7 @@ try {
         ]);
     }
 } catch (Throwable $e) {
-    error_log('beer.php cache lookup failed: ' . $e->getMessage());
+    logDiagnostic('beer.php cache lookup failed: ' . $e->getMessage());
 }
 
 $provider = (string)config('gemini.provider', 'devapi');
@@ -346,13 +358,13 @@ try {
     try {
         saveBeerResult($result);
     } catch (Throwable $e) {
-        error_log('beer.php cache save failed: ' . $e->getMessage());
+        logDiagnostic('beer.php cache save failed: ' . $e->getMessage());
     }
 
     respondJson(200, $result);
 } catch (Throwable $e) {
     $requestId = bin2hex(random_bytes(4));
-    error_log("beer.php lookup failed [{$requestId}]: " . $e->getMessage());
+    logDiagnostic("beer.php lookup failed [{$requestId}]: " . $e->getMessage());
     respondJson(502, [
         "error" => "Unable to find that beer. Please check the name and brewery, or try again later.",
         "request_id" => $requestId,
