@@ -127,6 +127,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .chevron {
@@ -148,11 +149,16 @@ h1 {
   color: #d8e7ff;
   border: 1px solid rgba(142, 197, 255, 0.25);
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-bubble {
   width: 44px;
   height: 44px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -834,9 +840,8 @@ h1 {
   }
 
   .panel__header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
 
   .pill {
