@@ -8,11 +8,10 @@ import MyBeers from './components/MyBeers'
 import UserProfile from './components/UserProfile'
 import MOTD from './components/MOTD'
 import Avatar from './components/Avatar'
+import { getConfig } from './api/config.js'
 
-// API base comes from Vite env (set VITE_API_BASE in .env); falls back to local dev default.
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost/api'
-
-console.log(`Using API base: ${API_BASE}`)
+// API base comes from public/config.json (see public/config.example.json).
+const API_BASE = getConfig().apiBase
 /**
  * POST a JSON payload to the API base and return parsed JSON or throw on error.
  * @param {string} path Relative API path (e.g., "/login.php").

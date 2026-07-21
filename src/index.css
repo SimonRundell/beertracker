@@ -21,3 +21,16 @@ body {
 a {
   color: inherit;
 }
+
+.config-error {
+  padding: 2rem;
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.config-error code {
+  font-family: "Courier New", monospace;
+  background: #16202c;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
