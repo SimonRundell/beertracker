@@ -3,6 +3,18 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
+/**
+ * Personal beer log endpoint. Requires Authorization: Bearer <token>.
+ *
+ * GET /api/user_beers.php              -> {"items": [...]} all logged beers for the caller
+ * GET /api/user_beers.php?beer=&brewery=  -> {"exists": bool, ...entry} single entry
+ * POST /api/user_beers.php             -> upsert one entry (beer, brewery, drank, user_notes,
+ *                                          tasting_location, date_tasted); {"status":"ok"}
+ */
+
+/**
+ * Parse and validate a YYYY-MM-DD date string, or respond 400 on invalid input.
+ */
 function parseDate(?string $value, string $field = 'date'): ?string {
     if ($value === null) {
         return null;
@@ -20,10 +32,12 @@ function parseDate(?string $value, string $field = 'date'): ?string {
     return $dt->format('Y-m-d');
 }
 
+/** Lowercase + trim a name for consistent lookup/storage. */
 function normalizeName(string $s): string {
     return trim(mb_strtolower($s));
 }
 
+/** Decode the photos_json column into a plain array of filenames. */
 function decodePhotos(?string $json): array {
     if (!$json) return [];
     $arr = json_decode($json, true);

@@ -3,16 +3,27 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
+/**
+ * Photo upload endpoint. Requires Authorization: Bearer <token>.
+ *
+ * POST /api/upload_user_beer_photo.php (multipart/form-data)
+ * Fields: beer, brewery, photo (file, PNG/JPG/GIF, max 10MB)
+ * Response: {"status":"ok", "filename":string, "photos":string[]}
+ */
+
+/** Lowercase + trim a name for consistent lookup/storage. */
 function normalizeName(string $s): string {
     return trim(mb_strtolower($s));
 }
 
+/** Decode the photos_json column into a plain array of filenames. */
 function decodePhotos(?string $json): array {
     if (!$json) return [];
     $arr = json_decode($json, true);
     return is_array($arr) ? array_values(array_filter($arr, 'is_string')) : [];
 }
 
+/** Create $path (recursively) if it doesn't already exist, or respond 500 and exit. */
 function ensureDir(string $path): void {
     if (!is_dir($path)) {
         if (!mkdir($path, 0777, true) && !is_dir($path)) {
@@ -21,6 +32,7 @@ function ensureDir(string $path): void {
     }
 }
 
+/** Map an allowed image MIME type to its file extension. */
 function detectExtension(string $mime): ?string {
     return match ($mime) {
         'image/jpeg' => 'jpg',
@@ -30,6 +42,7 @@ function detectExtension(string $mime): ?string {
     };
 }
 
+/** Root directory for uploaded photos, from config('file_location'). */
 function photoStorageRoot(): string {
     $base = (string)config('file_location', __DIR__ . '/../uploads');
     return rtrim($base, "\\/");
