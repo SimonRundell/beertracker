@@ -6,6 +6,9 @@ public/config.json
 # Production data dump
 data/beertracker.sql
 
+# Local diagnostic log (guaranteed-location fallback for beer.php failures)
+api/debug.log
+
 # Node / Vite output
 node_modules
 dist# Logs

@@ -10,7 +10,7 @@
   "gemini": {
     "provider": "devapi",
     "api_key": "",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.5-flash",
     "gcp_project_id": "",
     "gcp_region": "",
     "gcp_access_token": ""
