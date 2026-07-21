@@ -48,5 +48,6 @@
 ## Deployment Notes
 - Use an absolute path for `file_location` in production.
 - Serve `public/` as web root so `/uploads/...` resolves.
-- Tighten `api/cors.php` to an explicit origin allowlist (it currently reflects any `localhost:<port>`).
+- Add new production origins to the `$allowedOrigins` allowlist at the top of `api/cors.php` (it reflects `localhost:<port>` for dev and any origin listed there).
+- If authenticated requests 401 immediately after a successful login in production, check that the server actually forwards the `Authorization` header to PHP — PHP-FPM/FastCGI setups often strip it by default. `api/.htaccess` forces this under Apache; other setups (nginx, etc.) need their own equivalent (e.g. `fastcgi_param HTTP_AUTHORIZATION $http_authorization;`).
 - Replace MD5 password hashing with bcrypt/argon2 before any real deployment.

@@ -109,18 +109,40 @@ function newSessionToken(): array {
 }
 
 /**
+ * Read the Authorization header across PHP SAPIs. $_SERVER['HTTP_AUTHORIZATION']
+ * is often stripped by PHP-FPM/FastCGI setups before PHP ever sees it, so this
+ * checks every fallback PHP exposes it under.
+ */
+function getAuthorizationHeader(): string {
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if ($header !== '') return $header;
+
+    if (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+        if ($header !== '') return $header;
+    }
+
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+    }
+
+    return $header;
+}
+
+/**
  * Require a valid Authorization: Bearer <token> header and return the
  * authenticated user row. Responds 401 and exits when missing/invalid/expired.
  * @return array<string,mixed>
  */
 function requireAuth(): array {
-    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    if ($header === '' && function_exists('apache_request_headers')) {
-        $headers = apache_request_headers();
-        $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+    $header = getAuthorizationHeader();
+    if ($header === '') {
+        respondJson(401, ['error' => 'No Authorization header received by the server. If this is a production deployment, check that your web server passes the Authorization header through to PHP (e.g. FastCGI/PHP-FPM setups often strip it by default).']);
     }
     if (!preg_match('/^Bearer\s+(\S+)$/i', $header, $m)) {
-        respondJson(401, ['error' => 'Missing or malformed Authorization header']);
+        respondJson(401, ['error' => 'Malformed Authorization header']);
     }
     $token = $m[1];
 
