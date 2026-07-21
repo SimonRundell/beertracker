@@ -97,3 +97,49 @@ function readJsonBody(): array {
 function hashPassword(string $password): string {
     return md5($password);
 }
+
+/**
+ * Generate a new opaque session token and its expiry.
+ * @return array{0:string,1:string} [token, expiresAtSqlDateTime]
+ */
+function newSessionToken(): array {
+    $token = bin2hex(random_bytes(16));
+    $expires = (new DateTime('+30 days'))->format('Y-m-d H:i:s');
+    return [$token, $expires];
+}
+
+/**
+ * Require a valid Authorization: Bearer <token> header and return the
+ * authenticated user row. Responds 401 and exits when missing/invalid/expired.
+ * @return array<string,mixed>
+ */
+function requireAuth(): array {
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if ($header === '' && function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+    }
+    if (!preg_match('/^Bearer\s+(\S+)$/i', $header, $m)) {
+        respondJson(401, ['error' => 'Missing or malformed Authorization header']);
+    }
+    $token = $m[1];
+
+    $conn = db();
+    $stmt = $conn->prepare(
+        'SELECT id, name, email, status, avatar_base64, password_md5, token_expires_at
+         FROM users WHERE token = ? LIMIT 1'
+    );
+    $stmt->bind_param('s', $token);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row) {
+        respondJson(401, ['error' => 'Invalid session token']);
+    }
+    if ($row['token_expires_at'] === null || strtotime($row['token_expires_at']) < time()) {
+        respondJson(401, ['error' => 'Session token expired, please log in again']);
+    }
+
+    return $row;
+}

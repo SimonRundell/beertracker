@@ -3,13 +3,6 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
-function assertInt($value, string $field): int {
-    if (!is_numeric($value)) {
-        respondJson(400, ['error' => "{$field} must be numeric"]);
-    }
-    return (int)$value;
-}
-
 function detectImageType(string $binary): ?string {
     if (str_starts_with($binary, "\x89PNG\r\n\x1a\n")) {
         return 'image/png';
@@ -86,14 +79,11 @@ function fetchUser(mysqli $conn, int $userId): array {
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$authUser = requireAuth();
+$userId = (int)$authUser['id'];
 
 try {
     if ($method === 'GET') {
-        $userId = isset($_GET['user_id']) ? assertInt($_GET['user_id'], 'user_id') : null;
-        if (!$userId) {
-            respondJson(400, ['error' => 'user_id is required']);
-        }
-
         $conn = db();
         $user = fetchUser($conn, $userId);
 
@@ -108,7 +98,6 @@ try {
 
     if ($method === 'POST') {
         $body = readJsonBody();
-        $userId = assertInt($body['user_id'] ?? null, 'user_id');
         $name = array_key_exists('name', $body) ? trim((string)$body['name']) : null;
         $avatarProvided = array_key_exists('avatar_base64', $body);
         $avatarValue = $avatarProvided ? normalizeAvatar($body['avatar_base64'] ?? null) : null;

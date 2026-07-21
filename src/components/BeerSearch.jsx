@@ -82,11 +82,12 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
       setLogLoading(true)
       try {
         const params = new URLSearchParams({
-          user_id: user.id,
           beer: result.beer,
           brewery: result.brewery,
         })
-        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`)
+        const res = await fetch(`${apiBase}/user_beers.php?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${user.token}` },
+        })
         const data = await res.json()
         if (!res.ok) throw new Error(data?.error || 'Failed to load personal notes')
         if (data.exists) {
@@ -114,9 +115,8 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
     try {
       const res = await fetch(`${apiBase}/user_beers.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
         body: JSON.stringify({
-          user_id: user.id,
           beer: result.beer,
           brewery: result.brewery,
           drank,
@@ -147,13 +147,13 @@ export default function BeerSearch({ onSearch, result, busy, error, user, apiBas
       let latestPhotos = photos
       for (const file of files) {
         const form = new FormData()
-        form.append('user_id', user.id)
         form.append('beer', result.beer)
         form.append('brewery', result.brewery)
         form.append('photo', file)
 
         const res = await fetch(`${apiBase}/upload_user_beer_photo.php`, {
           method: 'POST',
+          headers: { Authorization: `Bearer ${user.token}` },
           body: form,
         })
         const data = await res.json()

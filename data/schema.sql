@@ -10,11 +10,14 @@ CREATE TABLE IF NOT EXISTS users (
   password_md5 CHAR(32) NOT NULL,
   avatar_base64 LONGTEXT NULL,
   status ENUM('admin','user') NOT NULL DEFAULT 'user',
+  token CHAR(32) NULL,
+  token_expires_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   last_login_at TIMESTAMP NULL DEFAULT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY idx_users_email (email),
+  UNIQUE KEY idx_users_token (token),
   KEY idx_users_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

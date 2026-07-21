@@ -3,13 +3,6 @@ declare(strict_types=1);
 
 require __DIR__ . '/common.php';
 
-function assertInt($value, string $field): int {
-    if (!is_numeric($value)) {
-        respondJson(400, ['error' => "{$field} must be numeric"]);
-    }
-    return (int)$value;
-}
-
 function normalizeName(string $s): string {
     return trim(mb_strtolower($s));
 }
@@ -30,7 +23,8 @@ try {
         respondJson(405, ['error' => 'Method not allowed']);
     }
 
-    $userId = assertInt($_POST['user_id'] ?? null, 'user_id');
+    $authUser = requireAuth();
+    $userId = (int)$authUser['id'];
     $beer = normalizeName((string)($_POST['beer'] ?? ''));
     $brewery = normalizeName((string)($_POST['brewery'] ?? ''));
     $filename = basename((string)($_POST['filename'] ?? ''));

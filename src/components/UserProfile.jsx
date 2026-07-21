@@ -33,8 +33,9 @@ export default function UserProfile({ user, apiBase, onUserUpdated }) {
     const fetchProfile = async () => {
       setError('')
       try {
-        const params = new URLSearchParams({ user_id: user.id })
-        const res = await fetch(`${apiBase}/user_profile.php?${params.toString()}`)
+        const res = await fetch(`${apiBase}/user_profile.php`, {
+          headers: { Authorization: `Bearer ${user.token}` },
+        })
         const data = await res.json()
         if (!res.ok) throw new Error(data?.error || 'Failed to load profile')
         if (avatarDirtyRef.current) {
@@ -92,7 +93,7 @@ export default function UserProfile({ user, apiBase, onUserUpdated }) {
     setError('')
     setStatus('')
 
-    const payload = { user_id: user.id }
+    const payload = {}
     let changes = 0
 
     if (name && name !== user.name) {
@@ -124,7 +125,7 @@ export default function UserProfile({ user, apiBase, onUserUpdated }) {
     try {
       const res = await fetch(`${apiBase}/user_profile.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
         body: JSON.stringify(payload),
       })
       const data = await res.json()

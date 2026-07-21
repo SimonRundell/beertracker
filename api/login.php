@@ -33,7 +33,12 @@ try {
         respondJson(401, ['error' => 'Invalid credentials']);
     }
 
-    $token = bin2hex(random_bytes(16));
+    [$token, $expires] = newSessionToken();
+    $update = $conn->prepare('UPDATE users SET token = ?, token_expires_at = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?');
+    $update->bind_param('ssi', $token, $expires, $row['id']);
+    $update->execute();
+    $update->close();
+
     respondJson(200, [
         'token' => $token,
         'id' => (int)$row['id'],
