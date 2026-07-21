@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 import Lightbox from './Lightbox'
 import { getUserBeerEntry, saveUserBeer, uploadUserBeerPhoto } from '../api/endpoints.js'
+
+const TASTING_NOTES_SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ['h3', 'p', 'ul', 'li', 'strong', 'em', 'br'],
+  ALLOWED_ATTR: [],
+}
 
 /**
  * Beer search panel plus personal log editor for the selected beer.
@@ -201,7 +207,12 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
           </div>
           <div className="result__details">
             <div className="label">Tasting notes</div>
-            <div className="tasting" dangerouslySetInnerHTML={{ __html: result.tastingnotes }} />
+            <div
+              className="tasting"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(result.tastingnotes, TASTING_NOTES_SANITIZE_CONFIG),
+              }}
+            />
           </div>
           {user && (
             <div className="personal">
