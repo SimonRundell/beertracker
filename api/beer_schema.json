@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brewery", "beer", "brewery details", "abv", "tastingnotes"],
+  "properties": {
+    "brewery": { "type": "string" },
+    "beer": { "type": "string" },
+    "brewery details": {
+      "type": "string",
+      "description": "Must include: Location: ...; Founded: ...; Notes: ..."
+    },
+    "abv": {
+      "type": "number",
+      "description": "ABV as numeric value without percent symbol. Use -1 if unknown."
+    },
+    "tastingnotes": {
+      "type": "string",
+      "description": "Single HTML string using only h3, p, ul, li, strong, em, br."
+    }
+  }
+}
