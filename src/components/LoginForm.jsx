@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PasswordField from './PasswordField'
 
 /**
  * Login form for existing users.
@@ -39,9 +40,8 @@ export default function LoginForm({ busy, error, onSubmit, onSwitch }) {
         </label>
         <label className="field">
           <span>Password</span>
-          <input
+          <PasswordField
             name="password"
-            type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

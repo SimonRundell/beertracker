@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PasswordField from './PasswordField'
 
 /**
  * Registration form for new users.
@@ -50,9 +51,8 @@ export default function RegisterForm({ busy, error, onSubmit, onSwitch }) {
         </label>
         <label className="field">
           <span>Password</span>
-          <input
+          <PasswordField
             name="password"
-            type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import Avatar from './Avatar'
+import PasswordField from './PasswordField'
 import { getUserProfile, updateUserProfile } from '../api/endpoints.js'
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024
@@ -173,15 +174,13 @@ export default function UserProfile({ user, onUserUpdated }) {
           </div>
           <div className="field">
             <span>Change password</span>
-            <input
-              type="password"
+            <PasswordField
               placeholder="Current password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               autoComplete="current-password"
             />
-            <input
-              type="password"
+            <PasswordField
               placeholder="New password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
