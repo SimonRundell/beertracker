@@ -220,7 +220,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
           <span>Brewery (optional)</span>
           <input value={brewery} onChange={(e) => setBrewery(e.target.value)} />
         </label>
-        <button className="primary" type="submit" disabled={busy || candidateBusy}>
+        <button className="primary topgap" type="submit" disabled={busy || candidateBusy}>
           {busy || candidateBusy ? 'Searching...' : 'Search'}
         </button>
       </form>
@@ -278,7 +278,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
           </div>
           {user && (
             <div className="personal">
-              <div className="label">Your log</div>
+              <div className="label">Your Beer Tracker</div>
               <div className="personal__fields">
                 <label className="field switch toggle">
                   <input
@@ -356,7 +356,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
                   <textarea
                     value={userNotes}
                     onChange={(e) => setUserNotes(e.target.value)}
-                    placeholder="What did you notice?"
+                    placeholder="Tasting Notes"
                     rows={4}
                   />
                 </label>
