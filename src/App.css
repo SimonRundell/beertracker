@@ -349,6 +349,43 @@ h1 {
   border-color: #8ec5ff;
 }
 
+.input-clearable {
+  position: relative;
+  display: flex;
+}
+
+.input-clearable input {
+  width: 100%;
+  padding-right: 34px;
+}
+
+.input-clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #7f93a8;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.input-clear:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #d8e7ff;
+}
+
 .grow {
   flex: 1 1 240px;
 }
