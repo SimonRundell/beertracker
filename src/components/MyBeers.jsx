@@ -255,11 +255,23 @@ export default function MyBeers({ user, refreshKey }) {
         <div className="my-beers__controls">
           <label className="field grow">
             <span>Filter by name or brewery</span>
-            <input
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Search..."
-            />
+            <div className="input-clearable">
+              <input
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                placeholder="Search..."
+              />
+              {filterText && (
+                <button
+                  type="button"
+                  className="input-clear"
+                  onClick={() => setFilterText('')}
+                  aria-label="Clear filter"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </label>
           <label className="field">
             <span>Sort by</span>
