@@ -330,27 +330,27 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
                     {uploadStatus && <span className="success">{uploadStatus}</span>}
                     {uploadError && <span className="error inline">{uploadError}</span>}
                   </div>
-                  {photos.length > 0 && (
-                    <div className="photo-list">
-                      {photos.map((name) => {
-                        const src = uploadsBase && user ? `${uploadsBase}/${user.id}/${name}` : null
-                        return src ? (
-                          <img
-                            key={name}
-                            src={src}
-                            alt={name}
-                            className="photo-thumb"
-                            onClick={() => setLightbox({ src, alt: name })}
-                          />
-                        ) : (
-                          <span key={name} className="chip ghost-chip">
-                            {name}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  )}
                 </label>
+                {photos.length > 0 && (
+                  <div className="photo-list">
+                    {photos.map((name) => {
+                      const src = uploadsBase && user ? `${uploadsBase}/${user.id}/${name}` : null
+                      return src ? (
+                        <img
+                          key={name}
+                          src={src}
+                          alt={name}
+                          className="photo-thumb"
+                          onClick={() => setLightbox({ src, alt: name })}
+                        />
+                      ) : (
+                        <span key={name} className="chip ghost-chip">
+                          {name}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
                 <label className="field">
                   <span>Personal tasting notes</span>
                   <textarea
