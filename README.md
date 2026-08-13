@@ -3,11 +3,21 @@
 AI-assisted beer search with personal tasting log, photo uploads, and user profiles. Built with React (Vite) and a small PHP/MySQL backend.
 
 ## Features
-- Search beers with AI-backed results (Gemini).
+- Search beers with AI-backed results (Gemini). When no brewery is given and the name is ambiguous, a "Did you mean...?" picker lists up to 5 candidate matches, prioritizing UK breweries, before running the full lookup.
 - Personal log: drank toggle, tasting date/location/notes, photo uploads (stored under `public/uploads/<user_id>`).
-- Profile management: name, password, avatar (base64 PNG/JPG/GIF).
-- My Beers list with editable modal and lightbox for photos.
+- Profile management: name, password, avatar (base64 PNG/JPG/GIF), with a show/hide toggle on every password field.
+- My Beers list with sort (beer name, brewery, date tasted, date edited) and filter (by name or brewery), editable modal, and lightbox for photos.
 - Message of the day rendered from `public/MOTD.txt`.
+
+## Recent Changes
+- Fixed: clicking a photo thumbnail in the search result or My Beers modal opened the file-upload dialog instead of the lightbox (the thumbnails were nested inside the upload `<label>`).
+- Fixed: production 401s on every authenticated request after login — some PHP-FPM/FastCGI setups strip the `Authorization` header before PHP sees it; `requireAuth()` now checks more fallbacks and `api/.htaccess` forwards the header explicitly.
+- Fixed: `beer.php` 502s caused by Google retiring the `gemini-2.0-flash` model; now uses the `gemini-flash-latest` alias so future model retirements don't silently break search.
+- Fixed: CORS now allows the production origin (`https://beertracker.codemonkey.design`) alongside local dev origins.
+- Fixed: the Sort By dropdown and the mobile panel-header layout (pill + close/chevron button wrapping to a second line) had theme/CSS issues.
+- Added: My Beers sort and filter controls, with a clear (×) button on the filter field.
+- Added: show/hide password toggle on login, register, and change-password fields.
+- Added: styled the native "Choose Files" button to match the app's other buttons.
 
 ## Quick Start
 1) Install deps:
@@ -46,6 +56,8 @@ AI-assisted beer search with personal tasting log, photo uploads, and user profi
 - Avatars are stored as data URIs in the DB (base64); consider moving to file storage for production.
 - Passwords are MD5 in this demo; use a stronger hash (bcrypt/argon2) for production.
 - Session tokens are opaque, stored server-side with a 30-day expiry; every authenticated endpoint requires `Authorization: Bearer <token>`.
+- The Gemini model is set to the `gemini-flash-latest` alias (in `api/config.json`) rather than a dated model name, so Google retiring a specific model version won't break search.
+- CORS allows local dev origins and an explicit production allowlist — add new deployment origins to `$allowedOrigins` at the top of `api/cors.php`.
 
 ## Scripts
 - `npm run dev` – start Vite dev server
