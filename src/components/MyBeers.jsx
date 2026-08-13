@@ -402,37 +402,37 @@ export default function MyBeers({ user, refreshKey }) {
                   />
                   {modalUploadError && <span className="error inline">{modalUploadError}</span>}
                 </div>
-                {Array.isArray(modalPhotos) && modalPhotos.length > 0 && (
-                  <div className="photo-list thumbs">
-                    {modalPhotos.map((name) => {
-                      const src = uploadsBase && user ? `${uploadsBase}/${user.id}/${name}` : null
-                      return src ? (
-                        <div key={name} className="photo-thumb-wrap">
-                          <img
-                            src={src}
-                            alt={name}
-                            className="photo-thumb"
-                            onClick={() => setLightbox({ src, alt: name })}
-                          />
-                          <button
-                            type="button"
-                            className="photo-remove"
-                            aria-label="Remove photo"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRemovePhoto(name)
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ) : (
-                        <span key={name} className="chip ghost-chip">{name}</span>
-                      )
-                    })}
-                  </div>
-                )}
               </label>
+              {Array.isArray(modalPhotos) && modalPhotos.length > 0 && (
+                <div className="photo-list thumbs">
+                  {modalPhotos.map((name) => {
+                    const src = uploadsBase && user ? `${uploadsBase}/${user.id}/${name}` : null
+                    return src ? (
+                      <div key={name} className="photo-thumb-wrap">
+                        <img
+                          src={src}
+                          alt={name}
+                          className="photo-thumb"
+                          onClick={() => setLightbox({ src, alt: name })}
+                        />
+                        <button
+                          type="button"
+                          className="photo-remove"
+                          aria-label="Remove photo"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRemovePhoto(name)
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <span key={name} className="chip ghost-chip">{name}</span>
+                    )
+                  })}
+                </div>
+              )}
             </div>
             <div className="modal__footer">
               <button className="ghost" type="button" onClick={closeModal}>
