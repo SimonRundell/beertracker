@@ -1,6 +1,7 @@
 # Config (contains DB/API secrets)
 config.json
 api/config.json
+api/config.live.json
 public/config.json
 
 # Production data dump
@@ -8,6 +9,9 @@ data/beertracker.sql
 
 # Local diagnostic log (guaranteed-location fallback for beer.php failures)
 api/debug.log
+
+# Deployment Script
+deploy-live.ps1
 
 # Node / Vite output
 node_modules
