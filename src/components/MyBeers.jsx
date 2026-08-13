@@ -15,10 +15,19 @@ import {
  * @param {{id:number,name?:string,email?:string}} props.user Authenticated user.
  * @param {number} props.refreshKey Changes trigger list reload (incremented after saves elsewhere).
  */
+const SORT_OPTIONS = [
+  { value: 'beer_asc', label: 'Beer name (A-Z)' },
+  { value: 'brewery_asc', label: 'Brewery (A-Z)' },
+  { value: 'date_tasted_desc', label: 'Date tasted (newest first)' },
+  { value: 'updated_desc', label: 'Date edited (newest first)' },
+]
+
 export default function MyBeers({ user, refreshKey }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [filterText, setFilterText] = useState('')
+  const [sortBy, setSortBy] = useState('updated_desc')
   const [lightbox, setLightbox] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalError, setModalError] = useState('')
@@ -59,6 +68,39 @@ export default function MyBeers({ user, refreshKey }) {
     const year = d.getFullYear()
     return `${day}/${month}/${year}`
   }
+
+  const visibleItems = useMemo(() => {
+    const needle = filterText.trim().toLowerCase()
+    const filtered = needle
+      ? items.filter(
+          (item) =>
+            item.beer?.toLowerCase().includes(needle) || item.brewery?.toLowerCase().includes(needle)
+        )
+      : items
+
+    const sorted = [...filtered]
+    switch (sortBy) {
+      case 'beer_asc':
+        sorted.sort((a, b) => a.beer.localeCompare(b.beer))
+        break
+      case 'brewery_asc':
+        sorted.sort((a, b) => a.brewery.localeCompare(b.brewery))
+        break
+      case 'date_tasted_desc':
+        sorted.sort((a, b) => {
+          if (!a.date_tasted && !b.date_tasted) return 0
+          if (!a.date_tasted) return 1
+          if (!b.date_tasted) return -1
+          return new Date(b.date_tasted) - new Date(a.date_tasted)
+        })
+        break
+      case 'updated_desc':
+      default:
+        sorted.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+        break
+    }
+    return sorted
+  }, [items, filterText, sortBy])
 
   const openListLightbox = (item, evt) => {
     evt?.stopPropagation()
@@ -209,12 +251,37 @@ export default function MyBeers({ user, refreshKey }) {
       <div className="panel__header">
         <div className="pill">My Beers</div>
       </div>
+      {items.length > 0 && (
+        <div className="my-beers__controls">
+          <label className="field grow">
+            <span>Filter by name or brewery</span>
+            <input
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Search..."
+            />
+          </label>
+          <label className="field">
+            <span>Sort by</span>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
       {loading && <div className="hint">Loading your beers...</div>}
       {error && <div className="error">{error}</div>}
       {!loading && !error && items.length === 0 && <div className="hint">No beers saved yet.</div>}
-      {!loading && !error && items.length > 0 && (
+      {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
+        <div className="hint">No beers match "{filterText}".</div>
+      )}
+      {!loading && !error && visibleItems.length > 0 && (
         <div className="beer-list">
-          {items.map((item, idx) => (
+          {visibleItems.map((item, idx) => (
             <div
               className="beer-row"
               key={`${item.beer}-${item.brewery}-${idx}`}

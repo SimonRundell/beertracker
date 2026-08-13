@@ -63,7 +63,7 @@ h1 {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 999px;
+  border-radius: 14px;
   background: rgba(142, 197, 255, 0.12);
   border: 1px solid rgba(142, 197, 255, 0.25);
 }
@@ -144,7 +144,7 @@ h1 {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 14px;
   background: rgba(142, 197, 255, 0.14);
   color: #d8e7ff;
   border: 1px solid rgba(142, 197, 255, 0.25);
@@ -162,7 +162,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 14px;
   border: 1px solid rgba(142, 197, 255, 0.35);
   background: rgba(142, 197, 255, 0.12);
   color: #d8e7ff;
@@ -328,7 +328,17 @@ h1 {
   resize: vertical;
 }
 
-.field input:focus {
+.field select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e8f0f8;
+  font-size: 15px;
+}
+
+.field input:focus,
+.field select:focus {
   outline: 2px solid #8ec5ff;
   border-color: #8ec5ff;
 }
@@ -594,6 +604,10 @@ h1 {
   text-align: center;
 }
 
+.topgap {
+  margin-top: 16px;
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -701,7 +715,7 @@ h1 {
 .toggle__track {
   width: 54px;
   height: 30px;
-  border-radius: 999px;
+  border-radius: 14px;
   background: linear-gradient(135deg, #ff6b6b, #ff3b3b);
   border: 1px solid rgba(255, 92, 92, 0.7);
   display: inline-flex;
@@ -757,6 +771,22 @@ h1 {
   min-height: 100%;
 }
 
+.my-beers__controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.my-beers__controls .grow {
+  flex: 1 1 200px;
+}
+
+.my-beers__controls .field:not(.grow) {
+  flex: 0 0 auto;
+  min-width: 200px;
+}
+
 .beer-list {
   display: grid;
   gap: 10px;
@@ -788,7 +818,7 @@ h1 {
 .chip {
   background: rgba(142, 197, 255, 0.14);
   border: 1px solid rgba(142, 197, 255, 0.25);
-  border-radius: 999px;
+  border-radius: 14px;
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
