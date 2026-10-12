@@ -80,7 +80,7 @@ function normalizeAvatar(?string $raw, int $maxBytes = 10485760): ?string {
 
 /** Fetch a user row by id, or respond 404 and exit if not found. */
 function fetchUser(mysqli $conn, int $userId): array {
-    $stmt = $conn->prepare('SELECT id, name, email, status, avatar_base64, password_md5 FROM users WHERE id = ? LIMIT 1');
+    $stmt = $conn->prepare('SELECT id, name, email, status, avatar_base64, password_hash, password_md5 FROM users WHERE id = ? LIMIT 1');
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -147,10 +147,13 @@ try {
         }
 
         if ($newPassword !== null) {
-            if ($currentPassword === null || hashPassword((string)$currentPassword) !== $user['password_md5']) {
+            enforceRateLimit('pwchange:user:' . $userId, 5, 900);
+            if ($currentPassword === null || !checkPassword($conn, $user, (string)$currentPassword)) {
+                recordRateLimitHit('pwchange:user:' . $userId);
                 respondJson(400, ['error' => 'Current password is incorrect']);
             }
-            $sets[] = 'password_md5 = ?';
+            requireStrongPassword((string)$newPassword);
+            $sets[] = 'password_hash = ?, password_md5 = NULL';
             $types .= 's';
             $params[] = hashPassword((string)$newPassword);
         }
@@ -188,5 +191,5 @@ try {
 
     respondJson(405, ['error' => 'Method not allowed']);
 } catch (Throwable $e) {
-    respondJson(500, ['error' => 'Request failed', 'message' => $e->getMessage()]);
+    respondServerError($e, 'user_profile.php');
 }

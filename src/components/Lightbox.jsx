@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
  * @param {string} props.src Image URL to display.
  * @param {string} [props.alt] Alt text.
  * @param {Array<string|{src:string,alt?:string}>} [props.images] Optional gallery of images.
- * @param {number} [props.startIndex] Starting index when using gallery mode.
+ * @param {number} [props.startIndex] Starting index when using gallery mode (read once on mount).
  * @param {() => void} [props.onClose] Close callback.
  */
 export default function Lightbox({ src, alt, images, startIndex = 0, onClose }) {
@@ -28,19 +28,6 @@ export default function Lightbox({ src, alt, images, startIndex = 0, onClose }) 
     if (startIndex >= normalized.length) return normalized.length - 1
     return startIndex
   })
-
-  useEffect(() => {
-    if (!hasGallery) return
-    if (startIndex < 0) {
-      setIndex(0)
-      return
-    }
-    if (startIndex >= normalized.length) {
-      setIndex(normalized.length - 1)
-      return
-    }
-    setIndex(startIndex)
-  }, [hasGallery, normalized.length, startIndex])
 
   const goNext = useCallback(() => {
     if (!hasGallery || normalized.length <= 1) return

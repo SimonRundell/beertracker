@@ -9,7 +9,8 @@ require __DIR__ . '/common.php';
  * GET /api/user_beers.php              -> {"items": [...]} all logged beers for the caller
  * GET /api/user_beers.php?beer=&brewery=  -> {"exists": bool, ...entry} single entry
  * POST /api/user_beers.php             -> upsert one entry (beer, brewery, drank, user_notes,
- *                                          tasting_location, date_tasted); {"status":"ok"}
+ *                                          tasting_location, date_tasted);
+ *                                          {"status":"ok","date_tasted":?string,"updated_at":string}
  */
 
 /**
@@ -30,18 +31,6 @@ function parseDate(?string $value, string $field = 'date'): ?string {
         respondJson(400, ['error' => "{$field} must be a valid date in YYYY-MM-DD format"]);
     }
     return $dt->format('Y-m-d');
-}
-
-/** Lowercase + trim a name for consistent lookup/storage. */
-function normalizeName(string $s): string {
-    return trim(mb_strtolower($s));
-}
-
-/** Decode the photos_json column into a plain array of filenames. */
-function decodePhotos(?string $json): array {
-    if (!$json) return [];
-    $arr = json_decode($json, true);
-    return is_array($arr) ? array_values(array_filter($arr, 'is_string')) : [];
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -82,7 +71,7 @@ try {
             respondJson(400, ['error' => 'beer and brewery are required for a single entry']);
         }
 
-        $stmt = $conn->prepare('SELECT drank, user_notes, tasting_location, date_tasted, photos_json, updated_at FROM user_beers WHERE user_id = ? AND beer = ? AND brewery = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT drank, is_manual, abv, description, user_notes, tasting_location, date_tasted, photos_json, updated_at FROM user_beers WHERE user_id = ? AND beer = ? AND brewery = ? LIMIT 1');
         $stmt->bind_param('iss', $userId, $beer, $brewery);
         $stmt->execute();
         $res = $stmt->get_result();
@@ -96,6 +85,9 @@ try {
         respondJson(200, [
             'exists' => true,
             'drank' => (bool)$row['drank'],
+            'manual' => (bool)$row['is_manual'],
+            'abv' => $row['abv'] !== null ? (float)$row['abv'] : null,
+            'description' => (string)($row['description'] ?? ''),
             'user_notes' => (string)($row['user_notes'] ?? ''),
             'tasting_location' => (string)($row['tasting_location'] ?? ''),
             'photos' => decodePhotos($row['photos_json'] ?? ''),
@@ -116,6 +108,9 @@ try {
         if ($beer === '' || $brewery === '') {
             respondJson(400, ['error' => 'beer and brewery are required']);
         }
+        if (mb_strlen($beer) > 255 || mb_strlen($brewery) > 255 || mb_strlen($location) > 255) {
+            respondJson(400, ['error' => 'beer, brewery and location must be 255 characters or fewer']);
+        }
 
         $conn = db();
         $stmt = $conn->prepare(
@@ -127,10 +122,17 @@ try {
         $stmt->execute();
         $stmt->close();
 
-        respondJson(200, ['status' => 'ok']);
+        // Echo back the stored timestamp so the client can refresh its list without a refetch.
+        $stmt = $conn->prepare('SELECT updated_at FROM user_beers WHERE user_id = ? AND beer = ? AND brewery = ?');
+        $stmt->bind_param('iss', $userId, $beer, $brewery);
+        $stmt->execute();
+        $updatedAt = $stmt->get_result()->fetch_assoc()['updated_at'] ?? null;
+        $stmt->close();
+
+        respondJson(200, ['status' => 'ok', 'date_tasted' => $dateTasted, 'updated_at' => $updatedAt]);
     }
 
     respondJson(405, ['error' => 'Method not allowed']);
 } catch (Throwable $e) {
-    respondJson(500, ['error' => 'Request failed', 'message' => $e->getMessage()]);
+    respondServerError($e, 'user_beers.php');
 }

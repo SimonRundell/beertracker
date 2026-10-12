@@ -6,37 +6,25 @@ require __DIR__ . '/common.php';
 /**
  * Single-file Beer Lookup API (Gemini) for PHP backend.
  *
- * Endpoint: POST /api/beer.php
+ * Endpoint: POST /api/beer.php. Requires Authorization: Bearer <token>.
+ * Calls that reach Gemini (cache misses) are limited to 30 per hour per user (429).
  *
  * Details mode (default) — full lookup for one specific beer:
- *   Body: {"prompt":"Beer Name" OR "Beer Name — Brewery"}
+ *   Body: {"beer":"Beer Name", "brewery":"Brewery (optional)"}
  *   Response: {"brewery":..., "beer":..., "brewery details":..., "abv":..., "tastingnotes":...}
  *
  * Candidates mode — list possible matches for a bare beer name (no brewery),
  * prioritising UK breweries when ambiguous, for a "Did you mean...?" picker:
- *   Body: {"prompt":"Beer Name", "mode":"candidates"}
+ *   Body: {"beer":"Beer Name", "mode":"candidates"}
  *   Response: {"candidates":[{"beer":..., "brewery":..., "country":...}, ...]}
  *
- * Config (api/config.json, see api/config.example.json):
+ * Config (api/.config.json, see api/.config.example.json):
  *   gemini.provider = "devapi" | "vertex"
  *   gemini.api_key, gemini.model                      (devapi)
  *   gemini.gcp_project_id, gemini.gcp_region, gemini.gcp_access_token  (vertex)
  */
 
 // ---- Helpers ---------------------------------------------------------------
-
-/** Lowercase + trim a name for cache-key comparisons. */
-function normalizeName(string $s): string {
-    return trim(mb_strtolower($s));
-}
-
-/** Split a "beer — brewery" prompt into its two parts. */
-function parsePromptGuess(string $prompt): array {
-    $parts = preg_split('/\s+[\-—]\s+/', $prompt, 2);
-    $beer = trim((string)($parts[0] ?? ''));
-    $brewery = trim((string)($parts[1] ?? ''));
-    return [$beer, $brewery];
-}
 
 /**
  * Strip any HTML tag/attribute not on the allowlist instead of rejecting the
@@ -79,18 +67,6 @@ function extractCandidateText(array $data): string {
         throw new RuntimeException('No candidate text returned by model.');
     }
     return $text;
-}
-
-/**
- * Log a diagnostic line via error_log() AND append it to api/debug.log.
- * The dual write exists because PHP's error_log destination varies by local
- * server setup (Apache module vs php-cgi vs built-in server) and is easy to
- * lose track of; api/debug.log is always in a known, fixed location.
- */
-function logDiagnostic(string $message): void {
-    error_log($message);
-    $line = '[' . gmdate('Y-m-d H:i:s') . 'Z] ' . $message . PHP_EOL;
-    @file_put_contents(__DIR__ . '/debug.log', $line, FILE_APPEND | LOCK_EX);
 }
 
 /**
@@ -163,7 +139,7 @@ function callGemini(string $fullText, array $schema): array {
 
 function callGeminiDevApi(string $fullText, array $schema): array {
     $apiKey = config('gemini.api_key');
-    if (!$apiKey) throw new RuntimeException('Missing gemini.api_key in api/config.json');
+    if (!$apiKey) throw new RuntimeException('Missing gemini.api_key in api/.config.json');
 
     $model = (string)config('gemini.model', 'gemini-flash-latest');
 
@@ -336,27 +312,87 @@ function validateAndCleanCandidates(array $r): array {
 
 // ---- Caching ---------------------------------------------------------------
 
-function fetchCachedBeer(?string $beer, ?string $brewery): ?array {
-    if ($beer === null || $beer === '') return null;
+/** Shape a cached `beers` row (or fresh result) as the public response. */
+function cachedRowToResponse(array $row): array {
+    // raw_json keeps the model's original capitalisation; the indexed columns are lowercased.
+    $original = json_decode((string)$row['raw_json'], true);
+    return is_array($original) ? $original : [
+        'brewery' => $row['brewery'],
+        'beer' => $row['beer'],
+        'brewery details' => $row['brewery_details'],
+        'abv' => (float)$row['abv'],
+        'tastingnotes' => $row['tastingnotes'],
+    ];
+}
+
+/**
+ * Look up a cached beer by what the user typed: first an exact beer+brewery
+ * match, then a recorded alias. A bare beer name (no brewery) only hits when
+ * exactly one cached beer has that name, since it is otherwise ambiguous.
+ * @return array<string,mixed>|null
+ */
+function fetchCachedBeer(string $beer, string $brewery): ?array {
     $conn = db();
     $beerN = normalizeName($beer);
-    $brewN = $brewery ? normalizeName($brewery) : '';
+    $brewN = normalizeName($brewery);
 
     if ($brewN === '') {
-        $stmt = $conn->prepare('SELECT beer, brewery, brewery_details, abv, tastingnotes FROM beers WHERE beer = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT * FROM beers WHERE beer = ? LIMIT 2');
         $stmt->bind_param('s', $beerN);
-    } else {
-        $stmt = $conn->prepare('SELECT beer, brewery, brewery_details, abv, tastingnotes FROM beers WHERE beer = ? AND brewery = ? LIMIT 1');
-        $stmt->bind_param('ss', $beerN, $brewN);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return count($rows) === 1 ? $rows[0] : null;
     }
+
+    $stmt = $conn->prepare(
+        'SELECT b.* FROM beers b WHERE b.beer = ? AND b.brewery = ?
+         UNION ALL
+         SELECT b.* FROM beer_aliases a JOIN beers b ON b.id = a.beer_id WHERE a.alias_beer = ? AND a.alias_brewery = ?
+         LIMIT 1'
+    );
+    $stmt->bind_param('ssss', $beerN, $brewN, $beerN, $brewN);
     $stmt->execute();
-    $res = $stmt->get_result();
-    $row = $res->fetch_assoc();
+    $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     return $row ?: null;
 }
 
-function saveBeerResult(array $r): void {
+/**
+ * Find a beer this user added by hand (see manual_beer.php). Checked before
+ * the shared cache and Gemini so the user's own data always wins. A bare beer
+ * name only matches when exactly one of their manual beers has that name.
+ * @return array<string,mixed>|null
+ */
+function fetchManualBeer(int $userId, string $beer, string $brewery): ?array {
+    $beerN = normalizeName($beer);
+    $brewN = normalizeName($brewery);
+    $sql = 'SELECT beer, brewery, abv, description FROM user_beers WHERE user_id = ? AND is_manual = 1 AND beer = ?';
+    if ($brewN === '') {
+        $stmt = db()->prepare($sql . ' LIMIT 2');
+        $stmt->bind_param('is', $userId, $beerN);
+    } else {
+        $stmt = db()->prepare($sql . ' AND brewery = ? LIMIT 1');
+        $stmt->bind_param('iss', $userId, $beerN, $brewN);
+    }
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    if (count($rows) !== 1) return null;
+    $r = $rows[0];
+    return manualBeerResponse($r['beer'], $r['brewery'], $r['abv'] !== null ? (float)$r['abv'] : null, $r['description']);
+}
+
+/** True when the model reported the beer as unknown, so the result must not be cached. */
+function isUnknownResult(array $r): bool {
+    return strtolower($r['beer']) === 'unknown' || strtolower($r['brewery']) === 'unknown' || $r['abv'] < 0;
+}
+
+/**
+ * Cache a fresh result under its canonical names, plus an alias for what the
+ * user actually typed when that differs (misspellings, missing "The", etc.).
+ */
+function saveBeerResult(array $r, string $typedBeer, string $typedBrewery): void {
     $conn = db();
     $beerN = normalizeName($r['beer']);
     $brewN = normalizeName($r['brewery']);
@@ -367,11 +403,21 @@ function saveBeerResult(array $r): void {
 
     $stmt = $conn->prepare(
         'INSERT INTO beers (beer, brewery, brewery_details, abv, tastingnotes, raw_json) VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE brewery_details=VALUES(brewery_details), abv=VALUES(abv), tastingnotes=VALUES(tastingnotes), raw_json=VALUES(raw_json)'
+         ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), brewery_details=VALUES(brewery_details), abv=VALUES(abv), tastingnotes=VALUES(tastingnotes), raw_json=VALUES(raw_json)'
     );
     $stmt->bind_param('sssdss', $beerN, $brewN, $bd, $abv, $tn, $json);
     $stmt->execute();
+    $beerId = $stmt->insert_id;
     $stmt->close();
+
+    $aliasBeer = normalizeName($typedBeer);
+    $aliasBrewery = normalizeName($typedBrewery);
+    if ($aliasBrewery !== '' && ($aliasBeer !== $beerN || $aliasBrewery !== $brewN)) {
+        $stmt = $conn->prepare('INSERT IGNORE INTO beer_aliases (alias_beer, alias_brewery, beer_id) VALUES (?, ?, ?)');
+        $stmt->bind_param('ssi', $aliasBeer, $aliasBrewery, $beerId);
+        $stmt->execute();
+        $stmt->close();
+    }
 }
 
 // ---- Request handling ------------------------------------------------------
@@ -380,67 +426,65 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respondJson(405, ["error" => "Method not allowed"]);
 }
 
-$rawBody = file_get_contents('php://input') ?: '';
-$body = json_decode($rawBody, true);
-$prompt = is_array($body) ? trim((string)($body['prompt'] ?? '')) : '';
-$mode = is_array($body) ? (string)($body['mode'] ?? 'details') : 'details';
+$authUser = requireAuth();
+$userId = (int)$authUser['id'];
 
-if ($prompt === '') {
-    respondJson(400, ["error" => "Missing prompt"]);
+$body = readJsonBody();
+$beerInput = trim((string)($body['beer'] ?? ''));
+$breweryInput = trim((string)($body['brewery'] ?? ''));
+$mode = (string)($body['mode'] ?? 'details');
+
+if ($beerInput === '') {
+    respondJson(400, ["error" => "Missing beer name"]);
 }
+if (mb_strlen($beerInput) > 200 || mb_strlen($breweryInput) > 200) {
+    respondJson(400, ["error" => "Beer and brewery names must be 200 characters or fewer"]);
+}
+
+// Gemini calls cost money and quota, so cap them per user (cache hits are free).
+const GEMINI_MAX_CALLS = 30;
+const GEMINI_WINDOW_SECONDS = 3600;
 
 // ---- Candidates mode: list possible beer+brewery matches for a bare beer name ----
 if ($mode === 'candidates') {
     try {
-        $raw = callGemini(candidateInstructionText() . "\n\nINPUT: " . $prompt, candidateSchema());
-        $candidates = validateAndCleanCandidates($raw);
-        respondJson(200, ['candidates' => $candidates]);
+        consumeRateLimit('gemini:user:' . $userId, GEMINI_MAX_CALLS, GEMINI_WINDOW_SECONDS);
+        $raw = callGemini(candidateInstructionText() . "\n\nINPUT: " . $beerInput, candidateSchema());
+        respondJson(200, ['candidates' => validateAndCleanCandidates($raw)]);
     } catch (Throwable $e) {
-        $requestId = bin2hex(random_bytes(4));
-        logDiagnostic("beer.php candidates lookup failed [{$requestId}]: " . $e->getMessage());
-        respondJson(502, [
-            "error" => "Unable to search for that beer. Please try again later.",
-            "request_id" => $requestId,
-        ]);
+        respondServerError($e, 'beer.php candidates lookup', 502, 'Unable to search for that beer. Please try again later.');
     }
-    exit;
 }
 
-// ---- Details mode: full lookup for a specific "beer — brewery" -------------
-[$guessBeer, $guessBrewery] = parsePromptGuess($prompt);
-
-// Try cache first
+// ---- Details mode: full lookup for a specific beer + brewery -------------
 try {
-    $cached = fetchCachedBeer($guessBeer, $guessBrewery);
+    $manual = fetchManualBeer($userId, $beerInput, $breweryInput);
+    if ($manual) {
+        respondJson(200, $manual);
+    }
+    $cached = fetchCachedBeer($beerInput, $breweryInput);
     if ($cached) {
-        respondJson(200, [
-            'brewery' => $cached['brewery'],
-            'beer' => $cached['beer'],
-            'brewery details' => $cached['brewery_details'],
-            'abv' => (float)$cached['abv'],
-            'tastingnotes' => $cached['tastingnotes'],
-        ]);
+        respondJson(200, cachedRowToResponse($cached));
     }
 } catch (Throwable $e) {
     logDiagnostic('beer.php cache lookup failed: ' . $e->getMessage());
 }
 
 try {
-    $raw = callGemini(instructionText() . "\n\nINPUT: " . $prompt, beerSchema());
-    $result = validateAndCleanBeerResult($raw);
+    consumeRateLimit('gemini:user:' . $userId, GEMINI_MAX_CALLS, GEMINI_WINDOW_SECONDS);
 
-    try {
-        saveBeerResult($result);
-    } catch (Throwable $e) {
-        logDiagnostic('beer.php cache save failed: ' . $e->getMessage());
+    $input = $breweryInput !== '' ? "{$beerInput} — {$breweryInput}" : $beerInput;
+    $result = validateAndCleanBeerResult(callGemini(instructionText() . "\n\nINPUT: " . $input, beerSchema()));
+
+    if (!isUnknownResult($result)) {
+        try {
+            saveBeerResult($result, $beerInput, $breweryInput);
+        } catch (Throwable $e) {
+            logDiagnostic('beer.php cache save failed: ' . $e->getMessage());
+        }
     }
 
     respondJson(200, $result);
 } catch (Throwable $e) {
-    $requestId = bin2hex(random_bytes(4));
-    logDiagnostic("beer.php lookup failed [{$requestId}]: " . $e->getMessage());
-    respondJson(502, [
-        "error" => "Unable to find that beer. Please check the name and brewery, or try again later.",
-        "request_id" => $requestId,
-    ]);
+    respondServerError($e, 'beer.php lookup', 502, 'Unable to find that beer. Please check the name and brewery, or try again later.');
 }

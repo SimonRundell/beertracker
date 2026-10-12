@@ -1,4 +1,6 @@
 {
+  "debug": false,
+  "allow_registration": false,
   "db": {
     "host": "localhost",
     "port": 3306,
@@ -6,7 +8,7 @@
     "user": "username",
     "pass": "changeme"
   },
-  "file_location": "../public/uploads",
+  "file_location": "../storage/uploads",
   "gemini": {
     "provider": "devapi",
     "api_key": "",

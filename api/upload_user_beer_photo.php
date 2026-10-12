@@ -9,24 +9,16 @@ require __DIR__ . '/common.php';
  * POST /api/upload_user_beer_photo.php (multipart/form-data)
  * Fields: beer, brewery, photo (file, PNG/JPG/GIF, max 10MB)
  * Response: {"status":"ok", "filename":string, "photos":string[]}
+ *
+ * A beer can hold at most MAX_PHOTOS_PER_BEER photos (400 beyond that).
+ * Files are stored outside the web root and only served by photo.php.
+ * Rate limited to 60 uploads per hour per user.
  */
-
-/** Lowercase + trim a name for consistent lookup/storage. */
-function normalizeName(string $s): string {
-    return trim(mb_strtolower($s));
-}
-
-/** Decode the photos_json column into a plain array of filenames. */
-function decodePhotos(?string $json): array {
-    if (!$json) return [];
-    $arr = json_decode($json, true);
-    return is_array($arr) ? array_values(array_filter($arr, 'is_string')) : [];
-}
 
 /** Create $path (recursively) if it doesn't already exist, or respond 500 and exit. */
 function ensureDir(string $path): void {
     if (!is_dir($path)) {
-        if (!mkdir($path, 0777, true) && !is_dir($path)) {
+        if (!mkdir($path, 0775, true) && !is_dir($path)) {
             respondJson(500, ['error' => 'Failed to create upload directory']);
         }
     }
@@ -40,12 +32,6 @@ function detectExtension(string $mime): ?string {
         'image/gif' => 'gif',
         default => null,
     };
-}
-
-/** Root directory for uploaded photos, from config('file_location'). */
-function photoStorageRoot(): string {
-    $base = (string)config('file_location', __DIR__ . '/../uploads');
-    return rtrim($base, "\\/");
 }
 
 try {
@@ -68,7 +54,8 @@ try {
 
     $file = $_FILES['photo'];
     if ($file['error'] !== UPLOAD_ERR_OK) {
-        respondJson(400, ['error' => 'Upload failed', 'code' => $file['error']]);
+        $tooBig = $file['error'] === UPLOAD_ERR_INI_SIZE || $file['error'] === UPLOAD_ERR_FORM_SIZE;
+        respondJson(400, ['error' => $tooBig ? 'Photo exceeds the server upload limit' : 'Upload failed', 'code' => $file['error']]);
     }
 
     $maxBytes = 10 * 1024 * 1024; // 10MB limit
@@ -77,47 +64,53 @@ try {
     }
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime = $finfo->file($file['tmp_name']);
-    $ext = detectExtension($mime);
+    $ext = detectExtension((string)$finfo->file($file['tmp_name']));
     if ($ext === null) {
         respondJson(400, ['error' => 'Photo must be PNG, JPG, or GIF']);
     }
 
-    $root = photoStorageRoot();
-    $userDir = $root . '/' . $userId;
+    consumeRateLimit('upload:user:' . $userId, 60, 3600);
+
+    $conn = db();
+    $stmt = $conn->prepare('SELECT photos_json FROM user_beers WHERE user_id = ? AND beer = ? AND brewery = ? LIMIT 1');
+    $stmt->bind_param('iss', $userId, $beer, $brewery);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $photos = decodePhotos($row['photos_json'] ?? '');
+    if (count($photos) >= MAX_PHOTOS_PER_BEER) {
+        respondJson(400, ['error' => 'A beer can have at most ' . MAX_PHOTOS_PER_BEER . ' photos. Remove one first.']);
+    }
+
+    $userDir = photoStorageRoot() . '/' . $userId;
     ensureDir($userDir);
 
-    $timestamp = gmdate('Ymd_His');
-    $random = bin2hex(random_bytes(4));
-    $filename = $timestamp . '_' . $random . '.' . $ext;
+    $filename = gmdate('Ymd_His') . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
     $targetPath = $userDir . '/' . $filename;
 
     if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
         respondJson(500, ['error' => 'Failed to store uploaded file']);
     }
 
-    // Update DB record with filename
-    $conn = db();
-    $stmt = $conn->prepare('SELECT photos_json FROM user_beers WHERE user_id = ? AND beer = ? AND brewery = ? LIMIT 1');
-    $stmt->bind_param('iss', $userId, $beer, $brewery);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $row = $res->fetch_assoc();
-    $stmt->close();
-
-    $photos = decodePhotos($row['photos_json'] ?? '');
     $photos[] = $filename;
     $photosJson = json_encode($photos, JSON_UNESCAPED_SLASHES);
 
-    // Upsert entry to ensure record exists
-    $stmt = $conn->prepare(
-        'INSERT INTO user_beers (user_id, beer, brewery, photos_json)
-         VALUES (?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE photos_json = VALUES(photos_json)'
-    );
-    $stmt->bind_param('isss', $userId, $beer, $brewery, $photosJson);
-    $stmt->execute();
-    $stmt->close();
+    // Upsert entry to ensure the record exists. If this fails, remove the
+    // file so no orphan is left on disk.
+    try {
+        $stmt = $conn->prepare(
+            'INSERT INTO user_beers (user_id, beer, brewery, photos_json)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE photos_json = VALUES(photos_json)'
+        );
+        $stmt->bind_param('isss', $userId, $beer, $brewery, $photosJson);
+        $stmt->execute();
+        $stmt->close();
+    } catch (Throwable $e) {
+        @unlink($targetPath);
+        throw $e;
+    }
 
     respondJson(200, [
         'status' => 'ok',
@@ -125,5 +118,5 @@ try {
         'photos' => $photos,
     ]);
 } catch (Throwable $e) {
-    respondJson(500, ['error' => 'Upload failed', 'message' => $e->getMessage()]);
+    respondServerError($e, 'upload_user_beer_photo.php');
 }

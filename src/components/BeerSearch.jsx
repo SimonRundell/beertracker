@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DOMPurify from 'dompurify'
 import Lightbox from './Lightbox'
-import { getUserBeerEntry, saveUserBeer, uploadUserBeerPhoto, searchBeerCandidates } from '../api/endpoints.js'
+import PhotoThumb from './PhotoThumb'
+import { getUserBeerEntry, saveManualBeer, saveUserBeer, searchBeerCandidates } from '../api/endpoints.js'
+import { useToast } from '../toast/toastContext.js'
+import { openDatePicker } from '../utils/datePicker.js'
+import { sentenceCase, titleCase, todayIso as getTodayIso } from '../utils/format.js'
+import { MAX_PHOTOS, uploadPhotos } from '../utils/uploadPhotos.js'
 
 const TASTING_NOTES_SANITIZE_CONFIG = {
   ALLOWED_TAGS: ['h3', 'p', 'ul', 'li', 'strong', 'em', 'br'],
@@ -12,14 +17,17 @@ const TASTING_NOTES_SANITIZE_CONFIG = {
  * Beer search panel plus personal log editor for the selected beer.
  * Handles loading/saving user-specific notes, photos, and tasting metadata.
  * @param {Object} props
- * @param {(query: string) => void} props.onSearch Triggered with user prompt.
+ * @param {(query: {beer: string, brewery?: string}) => void} props.onSearch Triggered with the beer (and optional brewery) to look up.
+ * @param {() => void} props.onClear Clears the current search result and error.
+ * @param {(result: object) => void} props.onManualAdd Receives the saved hand-entered beer (search-result shaped) when search can't find one.
  * @param {any} props.result Current beer search result object.
  * @param {boolean} props.busy Search in-flight flag.
  * @param {string} props.error Search error message (if any).
  * @param {{id:number,name?:string,email?:string}} props.user Authenticated user.
  * @param {() => void} [props.onSaved] Optional callback after log save/upload.
  */
-export default function BeerSearch({ onSearch, result, busy, error, user, onSaved }) {
+export default function BeerSearch({ onSearch, onClear, onManualAdd, result, busy, error, user, onSaved }) {
+  const toast = useToast()
   const [beer, setBeer] = useState('')
   const [brewery, setBrewery] = useState('')
   const [drank, setDrank] = useState(false)
@@ -31,38 +39,62 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
   const [logLoading, setLogLoading] = useState(false)
   const [photos, setPhotos] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState('')
-  const [uploadStatus, setUploadStatus] = useState('')
   const [lightbox, setLightbox] = useState(null)
   const [candidates, setCandidates] = useState(null)
   const [candidateBusy, setCandidateBusy] = useState(false)
   const [candidateError, setCandidateError] = useState('')
-  const dateInputRef = useRef(null)
-  const canClear = beer || brewery
-  const uploadsBase = useMemo(() => `${window.location.origin}/uploads`, [])
-  const todayIso = useMemo(() => {
-    const now = new Date()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    return `${now.getFullYear()}-${month}-${day}`
-  }, [])
-  const openDatePicker = () => {
-    if (dateInputRef.current) {
-      // showPicker pops the browser-native calendar when supported.
-      if (typeof dateInputRef.current.showPicker === 'function') {
-        dateInputRef.current.showPicker()
-      } else {
-        dateInputRef.current.focus()
-        dateInputRef.current.click()
-      }
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualBeer, setManualBeer] = useState('')
+  const [manualBrewery, setManualBrewery] = useState('')
+  const [manualAbv, setManualAbv] = useState('')
+  const [manualDescription, setManualDescription] = useState('')
+  const [manualBusy, setManualBusy] = useState(false)
+  const [manualError, setManualError] = useState('')
+  // Offer manual entry whenever a search has ended without a usable result.
+  const notFound = !busy && !candidateBusy && !result && Boolean(error || candidateError)
+  const canClear = Boolean(beer || brewery || result || error)
+  const todayIso = useMemo(() => getTodayIso(), [])
+  const openManual = () => {
+    setManualBeer(beer)
+    setManualBrewery(brewery)
+    setManualAbv('')
+    setManualDescription('')
+    setManualError('')
+    setManualOpen(true)
+  }
+
+  const submitManual = async (e) => {
+    e.preventDefault()
+    setManualBusy(true)
+    setManualError('')
+    try {
+      const saved = await saveManualBeer({
+        beer: manualBeer.trim(),
+        brewery: manualBrewery.trim(),
+        abv: manualAbv === '' ? null : manualAbv,
+        description: manualDescription,
+      })
+      setManualOpen(false)
+      setCandidates(null)
+      setCandidateError('')
+      onManualAdd(saved)
+      if (onSaved) onSaved()
+    } catch (err) {
+      setManualError(err.message)
+    } finally {
+      setManualBusy(false)
     }
   }
 
-
-  const sentenceCase = (str) => {
-    if (!str) return ''
-    const s = String(str).toLowerCase()
-    return s.charAt(0).toUpperCase() + s.slice(1)
+  /** Reset the form and the current result so a new beer can be searched. */
+  const clearSearch = () => {
+    setBeer('')
+    setBrewery('')
+    setCandidates(null)
+    setCandidateError('')
+    setManualOpen(false)
+    setManualError('')
+    onClear()
   }
 
   const handleSubmit = async (e) => {
@@ -72,7 +104,7 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
 
     // Brewery given explicitly: no ambiguity to resolve, search directly.
     if (brewery) {
-      onSearch(`${beer} - ${brewery}`)
+      onSearch({ beer, brewery })
       return
     }
 
@@ -81,9 +113,9 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
       const data = await searchBeerCandidates(beer)
       const matches = Array.isArray(data.candidates) ? data.candidates : []
       if (matches.length === 0) {
-        onSearch(beer)
+        onSearch({ beer })
       } else if (matches.length === 1) {
-        onSearch(`${matches[0].beer} - ${matches[0].brewery}`)
+        onSearch({ beer: matches[0].beer, brewery: matches[0].brewery })
       } else {
         setCandidates(matches)
       }
@@ -96,12 +128,12 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
 
   const chooseCandidate = (candidate) => {
     setCandidates(null)
-    onSearch(`${candidate.beer} - ${candidate.brewery}`)
+    onSearch({ beer: candidate.beer, brewery: candidate.brewery })
   }
 
   const searchByNameOnly = () => {
     setCandidates(null)
-    onSearch(beer)
+    onSearch({ beer })
   }
 
   useEffect(() => {
@@ -113,8 +145,6 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
     setSaveError('')
     setSaveStatus('')
     setPhotos([])
-    setUploadError('')
-    setUploadStatus('')
     setUploading(false)
     setLightbox(null)
     setCandidates(null)
@@ -141,7 +171,9 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
     }
 
     fetchLog()
-  }, [result, user])
+    // Keyed on the user id: profile edits replace the user object but must not wipe the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, user?.id])
 
   const handleSave = async () => {
     if (!result || !user) return
@@ -167,26 +199,18 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
   }
 
   const handleUpload = async (fileList) => {
-    if (!result || !user) return
-    const files = Array.from(fileList || []).slice(0, 2)
-    if (files.length === 0) return
-    setUploadError('')
-    setUploadStatus('')
+    if (!result || !user || !fileList?.length) return
     setUploading(true)
-    try {
-      let latestPhotos = photos
-      for (const file of files) {
-        const data = await uploadUserBeerPhoto({ beer: result.beer, brewery: result.brewery, file })
-        latestPhotos = Array.isArray(data.photos) ? data.photos : latestPhotos
-        setPhotos(latestPhotos)
-      }
-      setUploadStatus('Photo uploaded')
-      if (onSaved) onSaved()
-    } catch (err) {
-      setUploadError(err.message)
-    } finally {
-      setUploading(false)
-    }
+    const { uploaded } = await uploadPhotos({
+      toast,
+      beer: result.beer,
+      brewery: result.brewery,
+      files: fileList,
+      currentPhotos: photos,
+      onPhotos: setPhotos,
+    })
+    setUploading(false)
+    if (uploaded > 0 && onSaved) onSaved()
   }
 
   return (
@@ -196,13 +220,8 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
         <button
           className="icon-bubble"
           type="button"
-          onClick={() => {
-            setBeer('')
-            setBrewery('')
-            setCandidates(null)
-            setCandidateError('')
-          }}
-          aria-label="Clear search"
+          onClick={clearSearch}
+          aria-label="Clear search and result"
           disabled={!canClear || busy}
         >
           ×
@@ -247,35 +266,99 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
         </div>
       )}
       {error && <div className="error">{error}</div>}
+      {notFound && !manualOpen && (
+        <div className="manual-prompt">
+          <span className="hint">Very new beers may not be in the AI's knowledge yet.</span>
+          <button type="button" className="ghost" onClick={openManual}>
+            Add this beer manually
+          </button>
+        </div>
+      )}
+      {notFound && manualOpen && (
+        <form className="form manual-form" onSubmit={submitManual}>
+          <label className="field">
+            <span>Beer</span>
+            <input value={manualBeer} onChange={(e) => setManualBeer(e.target.value)} maxLength={255} required />
+          </label>
+          <label className="field">
+            <span>Brewery</span>
+            <input value={manualBrewery} onChange={(e) => setManualBrewery(e.target.value)} maxLength={255} required />
+          </label>
+          <label className="field">
+            <span>ABV % (optional)</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={manualAbv}
+              onChange={(e) => setManualAbv(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Description (optional)</span>
+            <textarea
+              value={manualDescription}
+              onChange={(e) => setManualDescription(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              placeholder="Style, what the brewery says about it..."
+            />
+          </label>
+          {manualError && <div className="error">{manualError}</div>}
+          <div className="actions-row">
+            <button className="primary" type="submit" disabled={manualBusy}>
+              {manualBusy ? 'Adding...' : 'Add beer'}
+            </button>
+            <button className="ghost" type="button" onClick={() => setManualOpen(false)} disabled={manualBusy}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
       {result && (
         <div className="result">
           <div className="result__row">
             <div>
               <div className="label">Brewery</div>
-              <div className="value">{result.brewery}</div>
+              <div className="value">{result.manual ? titleCase(result.brewery) : result.brewery}</div>
             </div>
             <div>
               <div className="label">Beer</div>
               <div className="value">{sentenceCase(result.beer)}</div>
             </div>
-            <div>
-              <div className="label">ABV</div>
-              <div className="value">{result.abv}%</div>
+            {(!result.manual || result.abv != null) && (
+              <div>
+                <div className="label">ABV</div>
+                <div className="value">{result.abv}%</div>
+              </div>
+            )}
+          </div>
+          {result.manual ? (
+            <div className="result__details">
+              <div className="label">Added manually</div>
+              {result.description && <div className="value manual-description">{result.description}</div>}
+              <div className="hint">
+                The AI has no details for this beer. What you entered is saved, and you can add your own notes below.
+              </div>
             </div>
-          </div>
-          <div className="result__details">
-            <div className="label">Brewery details</div>
-            <div className="value">{result['brewery details']}</div>
-          </div>
-          <div className="result__details">
-            <div className="label">Tasting notes</div>
-            <div
-              className="tasting"
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(result.tastingnotes, TASTING_NOTES_SANITIZE_CONFIG),
-              }}
-            />
-          </div>
+          ) : (
+            <>
+              <div className="result__details">
+                <div className="label">Brewery details</div>
+                <div className="value">{result['brewery details']}</div>
+              </div>
+              <div className="result__details">
+                <div className="label">Tasting notes</div>
+                <div
+                  className="tasting"
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(result.tastingnotes, TASTING_NOTES_SANITIZE_CONFIG),
+                  }}
+                />
+              </div>
+            </>
+          )}
           {user && (
             <div className="personal">
               <div className="label">Your Beer Tracker</div>
@@ -304,18 +387,17 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
                   <span>When did you taste it?</span>
                   <div className="date-row">
                     <input
-                      ref={dateInputRef}
                       type="date"
                       value={dateTasted}
                       max={todayIso}
                       onChange={(e) => setDateTasted(e.target.value)}
-                      onFocus={openDatePicker}
-                      onClick={openDatePicker}
+                      onFocus={(e) => openDatePicker(e.target)}
+                      onClick={(e) => openDatePicker(e.target)}
                     />
                   </div>
                 </label>
                 <label className="field">
-                  <span>Photos (max 2 per upload)</span>
+                  <span>{`Photos (max ${MAX_PHOTOS} per beer)`}</span>
                   <div className="photo-upload">
                     <input
                       type="file"
@@ -325,30 +407,19 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
                         handleUpload(e.target.files)
                         e.target.value = ''
                       }}
-                      disabled={uploading}
+                      disabled={uploading || photos.length >= MAX_PHOTOS}
                     />
-                    {uploadStatus && <span className="success">{uploadStatus}</span>}
-                    {uploadError && <span className="error inline">{uploadError}</span>}
                   </div>
                 </label>
                 {photos.length > 0 && (
                   <div className="photo-list">
-                    {photos.map((name) => {
-                      const src = uploadsBase && user ? `${uploadsBase}/${user.id}/${name}` : null
-                      return src ? (
-                        <img
-                          key={name}
-                          src={src}
-                          alt={name}
-                          className="photo-thumb"
-                          onClick={() => setLightbox({ src, alt: name })}
-                        />
-                      ) : (
-                        <span key={name} className="chip ghost-chip">
-                          {name}
-                        </span>
-                      )
-                    })}
+                    {photos.map((name) => (
+                      <PhotoThumb
+                        key={name}
+                        filename={name}
+                        onOpen={(src) => setLightbox({ src, alt: name })}
+                      />
+                    ))}
                   </div>
                 )}
                 <label className="field">
@@ -366,6 +437,9 @@ export default function BeerSearch({ onSearch, result, busy, error, user, onSave
                   </button>
                   {saveStatus && <span className="success">{saveStatus}</span>}
                   {saveError && <span className="error inline">{saveError}</span>}
+                  <button className="ghost" type="button" onClick={clearSearch}>
+                    New search
+                  </button>
                 </div>
               </div>
             </div>

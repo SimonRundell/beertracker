@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
+import { useState } from 'react'
 import Avatar from './Avatar'
 import PasswordField from './PasswordField'
-import { getUserProfile, updateUserProfile } from '../api/endpoints.js'
+import { updateUserProfile } from '../api/endpoints.js'
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif']
@@ -9,12 +9,12 @@ const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif']
 /**
  * User profile panel (collapsible) for updating name, avatar, and password.
  * @param {Object} props
- * @param {{id:number,name?:string,email?:string,avatar_base64?:string}} props.user Authenticated user.
+ * @param {{id:number,name?:string,email?:string,avatar_base64?:string}} props.user Authenticated user (already carries a fresh profile from login or session restore).
  * @param {(u: any) => void} [props.onUserUpdated] Callback with fresh user data after save/fetch.
  */
 export default function UserProfile({ user, onUserUpdated }) {
   const [name, setName] = useState(user?.name || '')
-  const [email, setEmail] = useState(user?.email || '')
+  const email = user?.email || ''
   const [avatar, setAvatar] = useState(user?.avatar_base64 || '')
   const [avatarDirty, setAvatarDirty] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
@@ -23,51 +23,20 @@ export default function UserProfile({ user, onUserUpdated }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [collapsed, setCollapsed] = useState(true)
-  const avatarDirtyRef = useRef(false)
-
-  useEffect(() => {
-    avatarDirtyRef.current = avatarDirty
-  }, [avatarDirty])
-
-  useEffect(() => {
-    if (!user) return
-    const fetchProfile = async () => {
-      setError('')
-      try {
-        const data = await getUserProfile()
-        if (avatarDirtyRef.current) {
-          return
-        }
-        setName(data.name || '')
-        setEmail(data.email || '')
-        setAvatar(data.avatar_base64 || '')
-        setAvatarDirty(false)
-        if (onUserUpdated) onUserUpdated(data)
-      } catch (err) {
-        setError(err.message)
-      }
-    }
-    fetchProfile()
-    // We intentionally skip onUserUpdated to avoid refetch loops.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
 
   const handleFile = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     setError('')
-    avatarDirtyRef.current = true
     setAvatarDirty(true)
     if (!ALLOWED_TYPES.includes(file.type)) {
       setError('Avatar must be PNG, JPG, or GIF')
       setAvatarDirty(false)
-      avatarDirtyRef.current = false
       return
     }
     if (file.size > MAX_AVATAR_BYTES) {
       setError('Avatar exceeds 10MB limit')
       setAvatarDirty(false)
-      avatarDirtyRef.current = false
       return
     }
     const reader = new FileReader()
@@ -82,7 +51,6 @@ export default function UserProfile({ user, onUserUpdated }) {
     setError('')
     setAvatar('')
     setAvatarDirty(true)
-    avatarDirtyRef.current = true
   }
 
   const handleSave = async () => {
@@ -106,6 +74,10 @@ export default function UserProfile({ user, onUserUpdated }) {
     if (newPassword) {
       if (!currentPassword) {
         setError('Enter your current password to set a new one')
+        return
+      }
+      if (newPassword.length < 8) {
+        setError('New password must be at least 8 characters')
         return
       }
       payload.current_password = currentPassword

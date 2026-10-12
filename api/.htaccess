@@ -6,3 +6,15 @@
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 </IfModule>
+
+# Never serve dotfiles (.config.json holds DB credentials and the Gemini API
+# key), logs, or SQL dumps. Only the *.php endpoints are meant to be public.
+<FilesMatch "^\.|\.(log|sql|md)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

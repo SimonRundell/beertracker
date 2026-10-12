@@ -1,12 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import Lightbox from './Lightbox'
+import PhotoThumb from './PhotoThumb'
 import {
   listUserBeers,
   getUserBeerEntry,
   saveUserBeer,
-  uploadUserBeerPhoto,
   deleteUserBeerPhoto,
+  saveManualBeer,
 } from '../api/endpoints.js'
+import { getPhotoUrl } from '../api/photos.js'
+import { useToast } from '../toast/toastContext.js'
+import { openDatePicker } from '../utils/datePicker.js'
+import { formatDate, titleCase, todayIso as getTodayIso } from '../utils/format.js'
+import { MAX_PHOTOS, uploadPhotos } from '../utils/uploadPhotos.js'
+
+const SORT_OPTIONS = [
+  { value: 'beer_asc', label: 'Beer name (A-Z)' },
+  { value: 'brewery_asc', label: 'Brewery (A-Z)' },
+  { value: 'date_tasted_desc', label: 'Date tasted (newest first)' },
+  { value: 'updated_desc', label: 'Date edited (newest first)' },
+]
 
 /**
  * Displays the user's saved beers with quick metadata, and an editable modal per entry.
@@ -15,14 +28,8 @@ import {
  * @param {{id:number,name?:string,email?:string}} props.user Authenticated user.
  * @param {number} props.refreshKey Changes trigger list reload (incremented after saves elsewhere).
  */
-const SORT_OPTIONS = [
-  { value: 'beer_asc', label: 'Beer name (A-Z)' },
-  { value: 'brewery_asc', label: 'Brewery (A-Z)' },
-  { value: 'date_tasted_desc', label: 'Date tasted (newest first)' },
-  { value: 'updated_desc', label: 'Date edited (newest first)' },
-]
-
 export default function MyBeers({ user, refreshKey }) {
+  const toast = useToast()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -38,36 +45,11 @@ export default function MyBeers({ user, refreshKey }) {
   const [modalLocation, setModalLocation] = useState('')
   const [modalDate, setModalDate] = useState('')
   const [modalPhotos, setModalPhotos] = useState([])
+  const [modalManual, setModalManual] = useState(false)
+  const [modalAbv, setModalAbv] = useState('')
+  const [modalDescription, setModalDescription] = useState('')
   const [modalUploading, setModalUploading] = useState(false)
-  const [modalUploadError, setModalUploadError] = useState('')
-  const uploadsBase = useMemo(() => `${window.location.origin}/uploads`, [])
-  const todayIso = useMemo(() => {
-    const now = new Date()
-    const m = String(now.getMonth() + 1).padStart(2, '0')
-    const d = String(now.getDate()).padStart(2, '0')
-    return `${now.getFullYear()}-${m}-${d}`
-  }, [])
-
-  const sentenceCase = (str) => {
-    if (!str) return ''
-    const s = String(str).toLowerCase()
-    return s.charAt(0).toUpperCase() + s.slice(1)
-  }
-
-  const titleCase = (str) => {
-    if (!str) return ''
-    return String(str).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
-  }
-
-  const formatDate = (value) => {
-    if (!value) return ''
-    const d = new Date(value)
-    if (Number.isNaN(d)) return String(value)
-    const day = String(d.getDate()).padStart(2, '0')
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const year = d.getFullYear()
-    return `${day}/${month}/${year}`
-  }
+  const todayIso = useMemo(() => getTodayIso(), [])
 
   const visibleItems = useMemo(() => {
     const needle = filterText.trim().toLowerCase()
@@ -102,15 +84,16 @@ export default function MyBeers({ user, refreshKey }) {
     return sorted
   }, [items, filterText, sortBy])
 
-  const openListLightbox = (item, evt) => {
+  const openListLightbox = async (item, evt) => {
     evt?.stopPropagation()
-    if (!user || !uploadsBase) return
-    if (!Array.isArray(item?.photos) || item.photos.length === 0) return
-    const images = item.photos
-      .filter(Boolean)
-      .map((name) => ({ src: `${uploadsBase}/${user.id}/${name}`, alt: name }))
-    if (images.length === 0) return
-    setLightbox({ images, startIndex: 0 })
+    if (!user || !Array.isArray(item?.photos) || item.photos.length === 0) return
+    try {
+      const urls = await Promise.all(item.photos.filter(Boolean).map(getPhotoUrl))
+      const images = urls.map((src, i) => ({ src, alt: item.photos[i] }))
+      if (images.length > 0) setLightbox({ images, startIndex: 0 })
+    } catch (err) {
+      toast.show('error', err.message)
+    }
   }
 
   useEffect(() => {
@@ -128,7 +111,9 @@ export default function MyBeers({ user, refreshKey }) {
       }
     }
     fetchList()
-  }, [user, refreshKey])
+    // Keyed on the user id so profile edits don't trigger a pointless refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, refreshKey])
 
   useEffect(() => {
     if (!modalOpen || !selected || !user) return
@@ -139,6 +124,9 @@ export default function MyBeers({ user, refreshKey }) {
         const data = await getUserBeerEntry(selected.beer, selected.brewery)
         if (data.exists) {
           setModalDrank(Boolean(data.drank))
+          setModalManual(Boolean(data.manual))
+          setModalAbv(data.abv ?? '')
+          setModalDescription(data.description || '')
           setModalNotes(data.user_notes || '')
           setModalLocation(data.tasting_location || '')
           setModalDate(data.date_tasted || '')
@@ -151,7 +139,8 @@ export default function MyBeers({ user, refreshKey }) {
       }
     }
     fetchDetail()
-  }, [modalOpen, selected, user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, selected, user?.id])
 
   const closeModal = () => {
     setModalOpen(false)
@@ -163,7 +152,9 @@ export default function MyBeers({ user, refreshKey }) {
     setModalDate('')
     setModalPhotos([])
     setModalDrank(false)
-    setModalUploadError('')
+    setModalManual(false)
+    setModalAbv('')
+    setModalDescription('')
     setModalUploading(false)
   }
 
@@ -172,7 +163,15 @@ export default function MyBeers({ user, refreshKey }) {
     setModalError('')
     setModalLoading(true)
     try {
-      await saveUserBeer({
+      if (modalManual) {
+        await saveManualBeer({
+          beer: selected.beer,
+          brewery: selected.brewery,
+          abv: modalAbv === '' ? null : modalAbv,
+          description: modalDescription,
+        })
+      }
+      const saved = await saveUserBeer({
         beer: selected.beer,
         brewery: selected.brewery,
         drank: modalDrank,
@@ -188,7 +187,8 @@ export default function MyBeers({ user, refreshKey }) {
                 ...it,
                 drank: modalDrank,
                 tasting_location: modalLocation,
-                date_tasted: modalDate || it.date_tasted,
+                date_tasted: saved.date_tasted ?? null,
+                updated_at: saved.updated_at ?? it.updated_at,
               }
             : it
         )
@@ -200,47 +200,41 @@ export default function MyBeers({ user, refreshKey }) {
     }
   }
 
+  /** Copy a beer's new photo list into the list snapshot so the row's photo chip stays current. */
+  const syncListPhotos = (beer, brewery, photos) =>
+    setItems((prev) =>
+      prev.map((it) => (it.beer === beer && it.brewery === brewery ? { ...it, photos } : it))
+    )
+
   const handleUploadModal = async (fileList) => {
-    if (!selected || !user) return
-    const files = Array.from(fileList || []).slice(0, 2)
-    if (files.length === 0) return
-    setModalUploadError('')
+    if (!selected || !user || !fileList?.length) return
     setModalUploading(true)
-    try {
-      let latest = modalPhotos
-      for (const file of files) {
-        const data = await uploadUserBeerPhoto({ beer: selected.beer, brewery: selected.brewery, file })
-        latest = Array.isArray(data.photos) ? data.photos : latest
-        setModalPhotos(latest)
-      }
-      // Update list snapshot with new photo count
-      setItems((prev) =>
-        prev.map((it) =>
-          it.beer === selected.beer && it.brewery === selected.brewery ? { ...it, photos: latest } : it
-        )
-      )
-    } catch (err) {
-      setModalUploadError(err.message)
-    } finally {
-      setModalUploading(false)
-    }
+    await uploadPhotos({
+      toast,
+      beer: selected.beer,
+      brewery: selected.brewery,
+      files: fileList,
+      currentPhotos: modalPhotos,
+      onPhotos: (photos) => {
+        setModalPhotos(photos)
+        syncListPhotos(selected.beer, selected.brewery, photos)
+      },
+    })
+    setModalUploading(false)
   }
 
   const handleRemovePhoto = async (name) => {
     if (!selected || !user) return
-    setModalUploadError('')
     setModalUploading(true)
+    const toastId = toast.show('loading', 'Removing photo...')
     try {
       const data = await deleteUserBeerPhoto({ beer: selected.beer, brewery: selected.brewery, filename: name })
       const updated = Array.isArray(data.photos) ? data.photos : []
       setModalPhotos(updated)
-      setItems((prev) =>
-        prev.map((it) =>
-          it.beer === selected.beer && it.brewery === selected.brewery ? { ...it, photos: updated } : it
-        )
-      )
+      syncListPhotos(selected.beer, selected.brewery, updated)
+      toast.show('success', 'Photo removed', toastId)
     } catch (err) {
-      setModalUploadError(err.message)
+      toast.show('error', err.message, toastId)
     } finally {
       setModalUploading(false)
     }
@@ -334,11 +328,11 @@ export default function MyBeers({ user, refreshKey }) {
         <div className="modal" role="dialog" aria-modal="true">
           <div className="modal__content">
             <div className="modal__header">
-              <div>
+              <div className="modal__title">
                 <div className="label">{selected.brewery}</div>
                 <div className="value">{titleCase(selected.beer)}</div>
               </div>
-              <button className="ghost" type="button" onClick={closeModal} aria-label="Close">
+              <button className="ghost modal__close" type="button" onClick={closeModal} aria-label="Close">
                 ×
               </button>
             </div>
@@ -356,6 +350,30 @@ export default function MyBeers({ user, refreshKey }) {
                 </span>
                 <span className="toggle__label">I have drunk this beer</span>
               </label>
+              {modalManual && (
+                <>
+                  <label className="field">
+                    <span>ABV % (added manually)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={modalAbv}
+                      onChange={(e) => setModalAbv(e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Description (added manually)</span>
+                    <textarea
+                      value={modalDescription}
+                      onChange={(e) => setModalDescription(e.target.value)}
+                      maxLength={1000}
+                      rows={3}
+                    />
+                  </label>
+                </>
+              )}
               <label className="field">
                 <span>Where did you taste it?</span>
                 <input
@@ -370,12 +388,8 @@ export default function MyBeers({ user, refreshKey }) {
                   type="date"
                   value={modalDate}
                   max={todayIso}
-                  onFocus={(e) => {
-                    if (typeof e.target.showPicker === 'function') e.target.showPicker()
-                  }}
-                  onClick={(e) => {
-                    if (typeof e.target.showPicker === 'function') e.target.showPicker()
-                  }}
+                  onFocus={(e) => openDatePicker(e.target)}
+                  onClick={(e) => openDatePicker(e.target)}
                   onChange={(e) => setModalDate(e.target.value)}
                 />
               </label>
@@ -388,49 +402,39 @@ export default function MyBeers({ user, refreshKey }) {
                 />
               </label>
               <label className="field">
-                <span>Photos</span>
+                <span>{`Photos (max ${MAX_PHOTOS}, saved as soon as you add or remove them)`}</span>
                 <div className="photo-upload">
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/gif"
                     multiple
-                    disabled={modalUploading}
+                    disabled={modalUploading || modalPhotos.length >= MAX_PHOTOS}
                     onChange={(e) => {
                       handleUploadModal(e.target.files)
                       e.target.value = ''
                     }}
                   />
-                  {modalUploadError && <span className="error inline">{modalUploadError}</span>}
                 </div>
               </label>
               {Array.isArray(modalPhotos) && modalPhotos.length > 0 && (
                 <div className="photo-list thumbs">
-                  {modalPhotos.map((name) => {
-                    const src = uploadsBase && user ? `${uploadsBase}/${user.id}/${name}` : null
-                    return src ? (
-                      <div key={name} className="photo-thumb-wrap">
-                        <img
-                          src={src}
-                          alt={name}
-                          className="photo-thumb"
-                          onClick={() => setLightbox({ src, alt: name })}
-                        />
-                        <button
-                          type="button"
-                          className="photo-remove"
-                          aria-label="Remove photo"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRemovePhoto(name)
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ) : (
-                      <span key={name} className="chip ghost-chip">{name}</span>
-                    )
-                  })}
+                  {modalPhotos.map((name) => (
+                    <div key={name} className="photo-thumb-wrap">
+                      <PhotoThumb filename={name} onOpen={(src) => setLightbox({ src, alt: name })} />
+                      <button
+                        type="button"
+                        className="photo-remove"
+                        aria-label="Remove photo"
+                        disabled={modalUploading}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRemovePhoto(name)
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

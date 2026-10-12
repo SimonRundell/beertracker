@@ -54,6 +54,7 @@ export default function RegisterForm({ busy, error, onSubmit, onSwitch }) {
           <PasswordField
             name="password"
             autoComplete="new-password"
+            minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -64,7 +65,7 @@ export default function RegisterForm({ busy, error, onSubmit, onSwitch }) {
           {busy ? 'Working...' : 'Create account'}
         </button>
       </form>
-      <p className="hint">Accounts are stored in the beertracker DB. Admin/user status handled server-side.</p>
+      <p className="hint">Passwords must be at least 8 characters.</p>
     </div>
   )
 }

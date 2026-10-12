@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 import LoginForm from './components/LoginForm'
@@ -8,8 +8,15 @@ import MyBeers from './components/MyBeers'
 import UserProfile from './components/UserProfile'
 import MOTD from './components/MOTD'
 import Avatar from './components/Avatar'
-import { login, register, searchBeer } from './api/endpoints.js'
-import { setAuthToken } from './api/client.js'
+import { login, logout, register, searchBeer, getUserProfile } from './api/endpoints.js'
+import { setAuthToken, setUnauthorizedHandler } from './api/client.js'
+import { getConfig } from './api/config.js'
+import { clearSession, loadSession, saveSession } from './api/session.js'
+import { clearPhotoCache } from './api/photos.js'
+
+/** True when the AI reported the beer as unknown (placeholder names or a negative ABV). */
+const isUnknownResult = (d) =>
+  /^unknown$/i.test(d?.beer ?? '') || /^unknown$/i.test(d?.brewery ?? '') || Number(d?.abv) < 0
 
 /**
  * Root application component that orchestrates auth, beer search, and user beer log layout.
@@ -19,11 +26,53 @@ function App() {
   const [mode, setMode] = useState('login')
   const [authBusy, setAuthBusy] = useState(false)
   const [user, setUser] = useState(null)
+  // True while a saved session is being checked against the server on page load.
+  const [booting, setBooting] = useState(() => Boolean(loadSession()))
   const [authError, setAuthError] = useState('')
   const [beerError, setBeerError] = useState('')
   const [beerResult, setBeerResult] = useState(null)
   const [searchBusy, setSearchBusy] = useState(false)
   const [beersVersion, setBeersVersion] = useState(0)
+
+  const allowRegistration = Boolean(getConfig().allowRegistration)
+
+  /** Drop all local session state (used by logout and by expired-session handling). */
+  const endSession = () => {
+    setAuthToken(null)
+    clearSession()
+    clearPhotoCache()
+    setUser(null)
+    setBeerResult(null)
+    setBeerError('')
+  }
+
+  // Restore a saved login after a page refresh, verifying the token is still valid.
+  useEffect(() => {
+    const session = loadSession()
+    if (!session) return
+    setAuthToken(session.token)
+    getUserProfile()
+      .then((profile) => setUser({ ...session.user, ...profile, token: session.token }))
+      .catch(() => {
+        setAuthToken(null)
+        clearSession()
+      })
+      .finally(() => setBooting(false))
+  }, [])
+
+  // If the server rejects our token mid-session (expired, logged out elsewhere), return to login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      endSession()
+      setAuthError('Your session has expired. Please log in again.')
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [])
+
+  // Keep the saved session's name/email in step with profile edits.
+  useEffect(() => {
+    if (user) saveSession(user.token, user)
+  }, [user])
 
   const handleLogin = async ({ email, password }) => {
     setAuthBusy(true)
@@ -65,13 +114,18 @@ function App() {
     }
   }
 
-  const handleSearch = async (prompt) => {
+  const handleSearch = async (query) => {
     setBeerError('')
     setBeerResult(null)
     setSearchBusy(true)
     try {
-      const data = await searchBeer(prompt)
-      setBeerResult(data)
+      const data = await searchBeer(query)
+      if (isUnknownResult(data)) {
+        // The AI answers "Unknown" for beers it can't identify; treat that as not found.
+        setBeerError("Couldn't find that beer.")
+      } else {
+        setBeerResult(data)
+      }
     } catch (err) {
       setBeerError(err.message)
     } finally {
@@ -79,10 +133,24 @@ function App() {
     }
   }
 
-  const handleLogout = () => {
-    setAuthToken(null)
-    setUser(null)
+  /** Show a hand-entered beer (already saved by the server) in place of the failed search. */
+  const handleManualAdd = (manualBeer) => {
+    setBeerError('')
+    setBeerResult(manualBeer)
+  }
+
+  const handleClearSearch = () => {
     setBeerResult(null)
+    setBeerError('')
+  }
+
+  const handleLogout = async () => {
+    try {
+      await logout() // invalidate the token server-side; local logout proceeds regardless
+    } catch {
+      // Already logged out or offline: nothing more to do.
+    }
+    endSession()
   }
   const handleUserUpdated = (updated) => {
     setUser((prev) => {
@@ -129,16 +197,22 @@ function App() {
       </header>
 
       <main className={user ? 'two-col' : 'grid'}>
-        {!user ? (
-          mode === 'login' ? (
+        {booting ? (
+          <div className="panel"><div className="hint">Restoring your session...</div></div>
+        ) : !user ? (
+          mode === 'login' || !allowRegistration ? (
             <LoginForm
               busy={authBusy}
               error={authError}
               onSubmit={handleLogin}
-              onSwitch={() => {
-                setMode('register')
-                setAuthError('')
-              }}
+              onSwitch={
+                allowRegistration
+                  ? () => {
+                      setMode('register')
+                      setAuthError('')
+                    }
+                  : undefined
+              }
             />
           ) : (
             <RegisterForm
@@ -157,6 +231,8 @@ function App() {
               <UserProfile user={user} onUserUpdated={handleUserUpdated} />
               <BeerSearch
                 onSearch={handleSearch}
+                onClear={handleClearSearch}
+                onManualAdd={handleManualAdd}
                 result={beerResult}
                 busy={searchBusy}
                 error={beerError}
@@ -169,7 +245,7 @@ function App() {
             </div>
           </>
         )}
-        {!user && <MOTD />}
+        {!user && !booting && <MOTD />}
       </main>
     </div>
   )

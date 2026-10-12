@@ -13,7 +13,13 @@ require __DIR__ . '/common.php';
  * Issues a new session token (see newSessionToken() in common.php) on success,
  * which the client must send as `Authorization: Bearer <token>` on every
  * subsequent authenticated request.
+ *
+ * Rate limited: 5 failed attempts per 15 minutes per IP and per email address
+ * (429 afterwards). A successful login clears that email's failure count.
  */
+
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_WINDOW_SECONDS = 900;
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respondJson(405, ['error' => 'Method not allowed']);
@@ -28,22 +34,27 @@ if ($email === '' || $password === '') {
 }
 
 try {
+    $ipBucket = 'login:ip:' . clientIp();
+    $emailBucket = 'login:email:' . sha1(mb_strtolower($email));
+    enforceRateLimit($ipBucket, LOGIN_MAX_FAILURES * 4, LOGIN_WINDOW_SECONDS);
+    enforceRateLimit($emailBucket, LOGIN_MAX_FAILURES, LOGIN_WINDOW_SECONDS);
+
     $conn = db();
-    $stmt = $conn->prepare('SELECT id, name, email, password_md5, status, avatar_base64 FROM users WHERE email = ? LIMIT 1');
+    $stmt = $conn->prepare('SELECT id, name, email, password_hash, password_md5, status, avatar_base64 FROM users WHERE email = ? LIMIT 1');
     $stmt->bind_param('s', $email);
     $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result->fetch_assoc();
+    $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$row) {
-        respondJson(401, ['error' => 'Invalid credentials']);
-    }
+    // Hash anyway for unknown emails so response time doesn't reveal which exist.
+    $valid = $row ? checkPassword($conn, $row, $password) : (hashPassword($password) === '');
 
-    $hash = hashPassword($password);
-    if (!hash_equals($row['password_md5'], $hash)) {
+    if (!$valid) {
+        recordRateLimitHit($ipBucket);
+        recordRateLimitHit($emailBucket);
         respondJson(401, ['error' => 'Invalid credentials']);
     }
+    clearRateLimit($emailBucket);
 
     [$token, $expires] = newSessionToken();
     $update = $conn->prepare('UPDATE users SET token = ?, token_expires_at = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?');
@@ -60,5 +71,5 @@ try {
         'avatar_base64' => $row['avatar_base64'] ?? null,
     ]);
 } catch (Throwable $e) {
-    respondJson(500, ['error' => 'Login failed', 'message' => $e->getMessage()]);
+    respondServerError($e, 'login.php');
 }

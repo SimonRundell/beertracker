@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
  */
 export default function MOTD() {
   const [html, setHtml] = useState('')
-  const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
@@ -16,8 +15,8 @@ export default function MOTD() {
         if (!active) return
         if (!res.ok) throw new Error('Failed to load')
         setHtml(text)
-      } catch (err) {
-        if (active) setError('')
+      } catch {
+        // No MOTD is fine; render nothing.
       }
     }
     load()
@@ -26,7 +25,7 @@ export default function MOTD() {
     }
   }, [])
 
-  if (error || !html) return null
+  if (!html) return null
 
   return (
     <div className="panel ghost-panel">

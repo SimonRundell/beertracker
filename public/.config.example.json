@@ -1,0 +1,5 @@
+{
+  "apiBase": "http://localhost/api",
+  "debug": false,
+  "allowRegistration": false
+}

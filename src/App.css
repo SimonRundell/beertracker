@@ -1006,3 +1006,132 @@ input[type="file"]::-webkit-file-upload-button:hover {
     gap: 10px;
   }
 }
+
+/* ---- Toasts ---- */
+.toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #16202c;
+  border: 1px solid rgba(142, 197, 255, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: #e8f0f8;
+  font-weight: 600;
+}
+
+.toast--success {
+  border-color: rgba(158, 230, 184, 0.6);
+}
+
+.toast--error {
+  border-color: rgba(255, 140, 140, 0.7);
+}
+
+.toast__message {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.toast__spinner {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(142, 197, 255, 0.3);
+  border-top-color: #8ec5ff;
+  animation: toast-spin 0.8s linear infinite;
+}
+
+@keyframes toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast__spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.photo-thumb--loading {
+  display: inline-block;
+  cursor: progress;
+}
+
+/* ---- Manual beer entry ---- */
+.manual-description {
+  white-space: pre-wrap;
+}
+
+.manual-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.manual-form {
+  margin-top: 12px;
+}
+
+/* ---- Modal header: prominent title, fixed-size close button ---- */
+.modal__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal__title .label {
+  overflow-wrap: anywhere;
+}
+
+.modal__title .value {
+  font-size: 1.4rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* Higher specificity than the full-width .ghost rule used on small screens. */
+.modal .modal__close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+/* Keep the lightbox close button round on small screens (beats the full-width .ghost rule). */
+.lightbox .lightbox__close {
+  width: 34px;
+  height: 34px;
+}

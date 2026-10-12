@@ -7,7 +7,7 @@ import PasswordField from './PasswordField'
  * @param {boolean} props.busy Disable submit while auth in-flight.
  * @param {string} props.error Error message to display.
  * @param {(creds: {email:string, password:string}) => void} props.onSubmit Submit handler.
- * @param {() => void} props.onSwitch Switch to register view.
+ * @param {() => void} [props.onSwitch] Switch to register view. Omit to hide the "Create account" button (registration closed).
  */
 export default function LoginForm({ busy, error, onSubmit, onSwitch }) {
   const [email, setEmail] = useState('')
@@ -22,9 +22,11 @@ export default function LoginForm({ busy, error, onSubmit, onSwitch }) {
     <div className="panel">
       <div className="panel__header">
         <div className="pill">Login</div>
-        <button className="ghost" type="button" onClick={onSwitch}>
-          Create account
-        </button>
+        {onSwitch && (
+          <button className="ghost" type="button" onClick={onSwitch}>
+            Create account
+          </button>
+        )}
       </div>
       <form className="form" onSubmit={handleSubmit}>
         <label className="field">

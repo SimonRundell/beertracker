@@ -1,8 +1,9 @@
 # Config (contains DB/API secrets)
-config.json
-api/config.json
-api/config.live.json
-public/config.json
+# Real configs (the .example.json templates stay tracked)
+.config.json
+api/.config.json
+api/.config.live.json
+public/.config.json
 
 # Production data dump
 data/beertracker.sql
@@ -15,7 +16,9 @@ deploy-live.ps1
 
 # Node / Vite output
 node_modules
-dist# Logs
+dist
+
+# Logs
 logs
 *.log
 npm-debug.log*

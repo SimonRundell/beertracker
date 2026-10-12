@@ -3,9 +3,13 @@ declare(strict_types=1);
 
 /**
  * Shared CORS handling, included first by every API endpoint.
- * Reflects the request Origin when it is localhost on any port (dev-friendly)
- * or an explicitly allowed production origin, sets the standard JSON/CORS
- * headers, and short-circuits OPTIONS preflight.
+ *
+ * Only two kinds of origin are allowed, and each is reflected back exactly:
+ *   - localhost on any port (http or https), for Vite and Laragon dev
+ *   - the exact production origins listed in $allowedOrigins
+ * Any other origin gets no Access-Control-Allow-Origin header, so browsers
+ * block the response; an OPTIONS preflight from one is refused with 403.
+ * Requests with no Origin header (curl, server-to-server) are unaffected.
  */
 
 // Exact-match production origins. Add new deployments here.
@@ -14,20 +18,19 @@ $allowedOrigins = [
 ];
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$isLocalhost = $origin !== '' && preg_match('#^https?://localhost(:\d+)?$#i', $origin);
+$isLocalhost = $origin !== '' && preg_match('#^https?://localhost(:\d+)?$#i', $origin) === 1;
 $isAllowedOrigin = $origin !== '' && in_array($origin, $allowedOrigins, true);
+
+header('Vary: Origin');
+header('Content-Type: application/json; charset=utf-8');
 
 if ($isLocalhost || $isAllowedOrigin) {
     header('Access-Control-Allow-Origin: ' . $origin);
-} else {
-    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Authorization, Content-Type');
 }
-header('Vary: Origin');
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Authorization, Content-Type');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
-    http_response_code(200);
+    http_response_code($origin === '' || $isLocalhost || $isAllowedOrigin ? 200 : 403);
     exit;
 }

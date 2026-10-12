@@ -17,11 +17,19 @@ export function register(name, email, password) {
 }
 
 /**
- * Run an AI-assisted beer lookup.
- * @param {string} prompt Beer name, or "Beer - Brewery".
+ * Log out: invalidates the current session token on the server.
+ * The caller should still clear its local session even if this fails.
  */
-export function searchBeer(prompt) {
-  return apiClient.post('/beer.php', { prompt }).then((res) => res.data)
+export function logout() {
+  return apiClient.post('/logout.php').then((res) => res.data)
+}
+
+/**
+ * Run an AI-assisted beer lookup (requires login; rate limited server-side).
+ * @param {{beer: string, brewery?: string}} query Beer name and optional brewery.
+ */
+export function searchBeer({ beer, brewery = '' }) {
+  return apiClient.post('/beer.php', { beer, brewery }).then((res) => res.data)
 }
 
 /**
@@ -32,7 +40,16 @@ export function searchBeer(prompt) {
  * @returns {Promise<{candidates: Array<{beer:string,brewery:string,country:string}>}>}
  */
 export function searchBeerCandidates(beerName) {
-  return apiClient.post('/beer.php', { prompt: beerName, mode: 'candidates' }).then((res) => res.data)
+  return apiClient.post('/beer.php', { beer: beerName, mode: 'candidates' }).then((res) => res.data)
+}
+
+/**
+ * Add or update a beer the AI couldn't find, with optional ABV and description.
+ * Returns a search-result-shaped object (with `manual: true`).
+ * @param {{beer:string, brewery:string, abv?:number|string|null, description?:string}} entry
+ */
+export function saveManualBeer(entry) {
+  return apiClient.post('/manual_beer.php', entry).then((res) => res.data)
 }
 
 /** List every beer the current user has logged. */
@@ -45,18 +62,30 @@ export function getUserBeerEntry(beer, brewery) {
   return apiClient.get('/user_beers.php', { params: { beer, brewery } }).then((res) => res.data)
 }
 
-/** Create or update the current user's personal log entry for one beer. */
+/**
+ * Create or update the current user's personal log entry for one beer.
+ * @returns {Promise<{status:string, date_tasted:string|null, updated_at:string|null}>}
+ */
 export function saveUserBeer(entry) {
   return apiClient.post('/user_beers.php', entry).then((res) => res.data)
 }
 
-/** Upload a tasting photo for one beer (max ~10MB, PNG/JPG/GIF). */
-export function uploadUserBeerPhoto({ beer, brewery, file }) {
+/**
+ * Upload a tasting photo for one beer (max 10MB, PNG/JPG/GIF; max 2 photos per beer).
+ * @param {{beer:string, brewery:string, file:File, onProgress?:(percent:number)=>void}} args
+ */
+export function uploadUserBeerPhoto({ beer, brewery, file, onProgress }) {
   const form = new FormData()
   form.append('beer', beer)
   form.append('brewery', brewery)
   form.append('photo', file)
-  return apiClient.post('/upload_user_beer_photo.php', form).then((res) => res.data)
+  return apiClient
+    .post('/upload_user_beer_photo.php', form, {
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+      },
+    })
+    .then((res) => res.data)
 }
 
 /** Delete a previously uploaded tasting photo. */
